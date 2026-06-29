@@ -1,21 +1,137 @@
 :root {
-  --color-primary: #4f46e5;
-  --color-bg: #f8fafc;
-  --color-text: #1e293b;
-  --color-text-secondary: #64748b;
+  /* ─── Colors (Xiaomi MiMo Studio 风格) ─── */
+  --color-bg: #ffffff;
+  --color-sidebar: #f5f5f7;
+  --color-sidebar-active: #e8e8ea;
+  --color-sidebar-hover: #ececee;
+  --color-card: #f5f5f7;
+  --color-card-hover: #ececee;
+  --color-text-primary: #1d1d1f;
+  --color-text-secondary: #86868b;
+  --color-text-tertiary: #aeaeb2;
+  --color-border: #e5e5e7;
+  --color-border-light: #f0f0f2;
+  --color-accent-blue: #0071e3;
+  --color-accent-blue-bg: #e8f0fe;
+  --color-btn-dark: #1d1d1f;
+  --color-btn-dark-hover: #3a3a3c;
+  --color-btn-outline: #ffffff;
+  --color-btn-outline-border: #d2d2d7;
+  --color-input-bg: #ffffff;
+  --color-input-border: #e5e5e7;
+  --color-input-placeholder: #aeaeb2;
+  --color-footer-text: #aeaeb2;
+  --color-badge-new-bg: #e8f0fe;
+  --color-badge-new-text: #1a73e8;
+  --color-badge-upgrade-bg: #e8f0fe;
+  --color-badge-upgrade-text: #1a73e8;
+
+  /* ─── Typography ─── */
+  --font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
+  --font-size-xs: 11px;
+  --font-size-sm: 12px;
+  --font-size-base: 13px;
+  --font-size-md: 14px;
+  --font-size-lg: 15px;
+  --font-size-xl: 17px;
+  --font-size-xxl: 28px;
+  --font-size-hero: 40px;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* ── Spacing ─── */
+  --space-2xs: 2px;
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 20px;
+  --space-2xl: 24px;
+  --space-3xl: 32px;
+  --space-4xl: 48px;
+
+  /* ─── Radius ─── */
   --radius-sm: 6px;
-  --radius-md: 10px;
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+
+  /* ─── Shadows ─── */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --shadow-input: 0 2px 12px rgba(0, 0, 0, 0.06);
+
+  /* ─── Layout ─── */
+  --sidebar-width: 220px;
+  --header-height: 52px;
+  --content-max-width: 760px;
+  --input-area-height: 120px;
 }
 
-* {
+*,
+*::before,
+*::after {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
 }
 
+html, body, #app {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--font-family);
+  font-size: var(--font-size-md);
+  color: var(--color-text-primary);
   background-color: var(--color-bg);
-  color: var(--color-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+  font-size: inherit;
+  color: inherit;
+}
+
+input, textarea {
+  font-family: inherit;
+  font-size: inherit;
+  border: none;
+  outline: none;
+  background: none;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+/* ─── Scrollbar ─── */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-tertiary);
 }
