@@ -1,6 +1,7 @@
 """Flask 应用工厂模块。"""
 
 import logging
+import os
 
 from flask import Flask
 from flask_cors import CORS
@@ -21,8 +22,13 @@ def create_app(config_class: type = Config) -> Flask:
     """
     app = Flask(__name__)
     app.config.from_object(config_class)
+    config_class.validate()
 
-    CORS(app, resources={r"/api/*": {"origins": "*"}})
+    # 开发环境默认允许所有来源；生产环境必须在 .env 中配置 CORS_ORIGINS
+    cors_origins = app.config.get("CORS_ORIGINS", "")
+    if app.config.get("FLASK_ENV") == "development" and not cors_origins:
+        cors_origins = "*"
+    CORS(app, resources={r"/api/*": {"origins": cors_origins.split(",")}})
 
     from app.api import api_bp
 
