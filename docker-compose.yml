@@ -1,0 +1,55 @@
+services:
+  elasticsearch:
+    image: docker.1ms.run/library/elasticsearch:8.19.17
+    container_name: acss-es
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+      - ./docker/es/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml
+
+  redis:
+    image: docker.1ms.run/library/redis:latest
+    container_name: acss-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+      - ./docker/redis/redis.conf:/usr/local/etc/redis/redis.conf
+    command: redis-server /usr/local/etc/redis/redis.conf
+
+  rasa:
+    build: ./nlp
+    container_name: acss-rasa
+    ports:
+      - "5005:5005"
+    depends_on:
+      - elasticsearch
+
+  backend:
+    build: ./backend
+    container_name: acss-backend
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env
+    depends_on:
+      - elasticsearch
+      - redis
+      - rasa
+
+  frontend:
+    build: ./frontend
+    container_name: acss-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  es_data:
+  redis_data:
