@@ -1,12 +1,12 @@
 <script setup>
-import { ref } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
 
 const selectedModel = ref('DeepSeek-V4-Flash');
 const inputText = ref('');
 
 const models = [
   { id: 'deepseek-v4-flash', label: 'DeepSeek-V4-Flash', badge: 'New' },
-  { id: 'deepseek-v4', label: 'DeepSeek-V4', badge: null },
+  { id: 'deepseek-v4-pro', label: 'DeepSeek-V4-Pro', badge: 'New' },
 ];
 
 const suggestedQuestions = [
@@ -16,6 +16,16 @@ const suggestedQuestions = [
 ];
 
 const isModelDropdownOpen = ref(false);
+const selectorRef = ref(null);
+
+function handleDocClick(e) {
+  if (selectorRef.value && !selectorRef.value.contains(e.target)) {
+    isModelDropdownOpen.value = false;
+  }
+}
+
+onMounted(() => document.addEventListener('click', handleDocClick));
+onUnmounted(() => document.removeEventListener('click', handleDocClick));
 
 function handleSuggestedClick(question) {
   inputText.value = question;
@@ -38,7 +48,7 @@ function handleKeydown(e) {
   <main class="chat-area">
     <!-- Header -->
     <header class="chat-area__header">
-      <div class="chat-area__model-selector">
+      <div ref="selectorRef" class="chat-area__model-selector">
         <button
           class="chat-area__model-btn"
           @click="isModelDropdownOpen = !isModelDropdownOpen"
@@ -85,22 +95,24 @@ function handleKeydown(e) {
 
     <!-- Welcome / Empty State -->
     <div class="chat-area__welcome">
-      <h1 class="chat-area__title">智能客服系统</h1>
-      <p class="chat-area__subtitle">问题自动分类与回答生成，为您提供快速准确的电商客服支持</p>
+      <div class="chat-area__welcome-inner">
+        <h1 class="chat-area__title">智能客服系统</h1>
+        <p class="chat-area__subtitle">问题自动分类与回答生成，为您提供快速准确的电商客服支持</p>
 
-      <div class="chat-area__divider" />
+        <div class="chat-area__divider" />
 
-      <p class="chat-area__suggest-label">您可以这样问</p>
+        <p class="chat-area__suggest-label">您可以这样问</p>
 
-      <div class="chat-area__suggest-list">
-        <button
-          v-for="(q, idx) in suggestedQuestions"
-          :key="idx"
-          class="chat-area__suggest-item"
-          @click="handleSuggestedClick(q)"
-        >
-          {{ q }}
-        </button>
+        <div class="chat-area__suggest-list">
+          <button
+            v-for="(q, idx) in suggestedQuestions"
+            :key="idx"
+            class="chat-area__suggest-item"
+            @click="handleSuggestedClick(q)"
+          >
+            {{ q }}
+          </button>
+        </div>
       </div>
     </div>
 
@@ -158,6 +170,7 @@ function handleKeydown(e) {
   height: var(--header-height);
   padding: 0 var(--space-2xl);
   flex-shrink: 0;
+  border-bottom: 1px solid var(--color-border-light);
 }
 
 .chat-area__model-selector {
@@ -168,7 +181,7 @@ function handleKeydown(e) {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
-  padding: var(--space-xs) var(--space-md);
+  padding: var(--space-xs) var(--space-sm);
   border-radius: var(--radius-md);
   font-size: var(--font-size-md);
   font-weight: var(--font-weight-medium);
@@ -277,11 +290,15 @@ function handleKeydown(e) {
 .chat-area__welcome {
   flex: 1;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: 0 var(--space-2xl);
   overflow-y: auto;
+}
+
+.chat-area__welcome-inner {
+  width: 100%;
+  max-width: var(--content-max-width);
 }
 
 .chat-area__title {
@@ -289,40 +306,33 @@ function handleKeydown(e) {
   font-weight: var(--font-weight-bold);
   color: var(--color-text-primary);
   letter-spacing: -0.02em;
-  margin-bottom: var(--space-md);
+  margin-bottom: var(--space-sm);
 }
 
 .chat-area__subtitle {
   font-size: var(--font-size-lg);
   color: var(--color-text-secondary);
-  text-align: center;
-  max-width: 480px;
   line-height: 1.6;
+  margin-bottom: var(--space-3xl);
 }
 
 .chat-area__divider {
   width: 100%;
-  max-width: var(--content-max-width);
   height: 1px;
   background-color: var(--color-border-light);
-  margin: var(--space-3xl) 0 var(--space-xl);
+  margin-bottom: var(--space-xl);
 }
 
 .chat-area__suggest-label {
-  align-self: flex-start;
   font-size: var(--font-size-sm);
   color: var(--color-text-tertiary);
   margin-bottom: var(--space-md);
-  max-width: var(--content-max-width);
-  width: 100%;
 }
 
 .chat-area__suggest-list {
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
-  max-width: var(--content-max-width);
-  width: 100%;
 }
 
 .chat-area__suggest-item {
@@ -332,13 +342,15 @@ function handleKeydown(e) {
   border-radius: var(--radius-md);
   font-size: var(--font-size-md);
   color: var(--color-text-primary);
-  transition: all 0.15s ease;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   border: 1px solid transparent;
+  width: 100%;
 }
 
 .chat-area__suggest-item:hover {
   background-color: var(--color-card-hover);
   border-color: var(--color-border);
+  transform: translateX(4px);
 }
 
 /* ─── Input Area ─── */
