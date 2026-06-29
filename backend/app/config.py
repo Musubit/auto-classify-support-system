@@ -29,8 +29,8 @@ class Config:
     # ─── Redis ───
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
-    # ─── Rasa ───
-    RASA_SERVER_URL: str = os.getenv("RASA_SERVER_URL", "http://localhost:5005")
+    # ─── NLP ───
+    NLP_SERVER_URL: str = os.getenv("NLP_SERVER_URL", "http://localhost:5005")
 
     # ─── 缓存策略（单位: 秒） ───
     SESSION_TTL: int = 1800  # 会话消息缓存 30 分钟

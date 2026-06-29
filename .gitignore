@@ -8,8 +8,7 @@ venv/
 # uv
 # uv.lock  # 本项目保留 uv.lock
 
-# Rasa 模型（体积大，不入库）
-nlp/models/*.tar.gz
+# NLP 训练模型（体积大，不入库）
 
 # 环境变量（含密钥，严禁入库）
 .env
@@ -35,3 +34,9 @@ dist/
 
 # 日志
 *.log
+
+docs/
+# NLP module
+nlp/models/
+nlp/__pycache__/
+nlp/**/*.pyc

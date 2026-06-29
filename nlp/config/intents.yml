@@ -1,0 +1,9 @@
+# 意图定义文件
+intents:
+  - refund_inquiry      # 退货咨询
+  - logistics_inquiry   # 物流查询
+  - product_inquiry     # 商品咨询
+  - order_inquiry       # 订单查询
+  - complaint           # 投诉
+  - greeting            # 问候
+  - other               # 其他
