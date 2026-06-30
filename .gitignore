@@ -40,3 +40,6 @@ docs/
 nlp/models/
 nlp/__pycache__/
 nlp/**/*.pyc
+
+# AGENT
+.claude/

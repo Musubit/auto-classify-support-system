@@ -1,5 +1,7 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue';
+import { ref, watch, nextTick, onMounted, onUnmounted } from 'vue';
+import { useChatStore } from '@/stores/chat';
+import MessageBubble from './MessageBubble.vue';
 
 const selectedModel = ref('DeepSeek-V4-Flash');
 const inputText = ref('');
@@ -17,6 +19,9 @@ const suggestedQuestions = [
 
 const isModelDropdownOpen = ref(false);
 const selectorRef = ref(null);
+const messagesRef = ref(null);
+
+const chatStore = useChatStore();
 
 function handleDocClick(e) {
   if (selectorRef.value && !selectorRef.value.contains(e.target)) {
@@ -28,12 +33,14 @@ onMounted(() => document.addEventListener('click', handleDocClick));
 onUnmounted(() => document.removeEventListener('click', handleDocClick));
 
 function handleSuggestedClick(question) {
-  inputText.value = question;
+  chatStore.sendMessage(question);
 }
 
 function handleSend() {
-  if (!inputText.value.trim()) return;
-  // TODO: 接入 chat store 发送消息
+  const text = inputText.value.trim();
+  if (!text || chatStore.isStreaming) return;
+  inputText.value = '';
+  chatStore.sendMessage(text);
 }
 
 function handleKeydown(e) {
@@ -42,6 +49,29 @@ function handleKeydown(e) {
     handleSend();
   }
 }
+
+/** 新消息到达时自动滚动到底部。 */
+watch(
+  () => chatStore.messages.length,
+  () => nextTick(() => {
+    if (messagesRef.value) {
+      messagesRef.value.scrollTop = messagesRef.value.scrollHeight;
+    }
+  }),
+);
+
+/** 流式 token 追加时也滚动。 */
+watch(
+  () => {
+    const last = chatStore.lastBotMessage;
+    return last ? last.text.length : 0;
+  },
+  () => nextTick(() => {
+    if (messagesRef.value) {
+      messagesRef.value.scrollTop = messagesRef.value.scrollHeight;
+    }
+  }),
+);
 </script>
 
 <template>
@@ -93,8 +123,17 @@ function handleKeydown(e) {
       </div>
     </header>
 
+    <!-- Messages Area -->
+    <div v-if="chatStore.messages.length" ref="messagesRef" class="chat-area__messages">
+      <MessageBubble
+        v-for="msg in chatStore.messages"
+        :key="msg.id"
+        :message="msg"
+      />
+    </div>
+
     <!-- Welcome / Empty State -->
-    <div class="chat-area__welcome">
+    <div v-else class="chat-area__welcome">
       <div class="chat-area__welcome-inner">
         <h1 class="chat-area__title">智能客服系统</h1>
         <p class="chat-area__subtitle">问题自动分类与回答生成，为您提供快速准确的电商客服支持</p>
@@ -284,6 +323,15 @@ function handleKeydown(e) {
 
 .chat-area__btn-primary:hover {
   background-color: var(--color-btn-dark-hover);
+}
+
+/* ─── Messages Area ─── */
+.chat-area__messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-2xl);
+  display: flex;
+  flex-direction: column;
 }
 
 /* ─── Welcome / Empty State ─── */
