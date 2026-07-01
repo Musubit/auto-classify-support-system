@@ -48,6 +48,14 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  /** 清空当前会话，开始新对话。 */
+  function clearSession() {
+    messages.value = [];
+    currentSessionId.value = null;
+    isStreaming.value = false;
+    error.value = null;
+  }
+
   /**
    * 发送用户消息并接收 SSE 流式回复。
    *
@@ -75,6 +83,7 @@ export const useChatStore = defineStore('chat', () => {
       text: '',
       timestamp: Date.now(),
       intent: null,
+      sentiment: null,
       isStreaming: true,
     };
     messages.value.push(botMsg);
@@ -86,6 +95,12 @@ export const useChatStore = defineStore('chat', () => {
       onIntent(data) {
         if (botMsg.intent === null) {
           botMsg.intent = data;
+        }
+      },
+
+      onSentiment(data) {
+        if (botMsg.sentiment === null) {
+          botMsg.sentiment = data;
         }
       },
 
@@ -130,6 +145,7 @@ export const useChatStore = defineStore('chat', () => {
     lastBotMessage,
     // actions
     initSession,
+    clearSession,
     sendMessage,
   };
 });

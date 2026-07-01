@@ -3,8 +3,10 @@
  * 消息气泡组件。
  *
  * Props:
- *   message: { id, role, text, timestamp, intent?, isStreaming? }
+ *   message: { id, role, text, timestamp, intent?, sentiment?, isStreaming? }
  */
+import { getIntentLabel, getSentimentLabel } from '@/utils/labels';
+
 defineProps({
   message: {
     type: Object,
@@ -30,13 +32,26 @@ function formatTime(ts) {
     }"
   >
     <div class="msg-bubble__inner">
-      <!-- 意图标签（仅 bot 消息且有意图时显示） -->
-      <span
-        v-if="message.role === 'assistant' && message.intent"
-        class="msg-bubble__intent-tag"
-      >
-        {{ message.intent.intent }}
-      </span>
+      <!-- 意图标签 + 情感标签（仅 bot 消息） -->
+      <div v-if="message.role === 'assistant'" class="msg-bubble__tags">
+        <span
+          v-if="message.intent"
+          class="msg-bubble__tag msg-bubble__tag--intent"
+        >
+          意图：{{ getIntentLabel(message.intent.intent) }}
+        </span>
+        <span
+          v-if="message.sentiment"
+          class="msg-bubble__tag"
+          :class="{
+            'msg-bubble__tag--positive': message.sentiment.label === 'positive',
+            'msg-bubble__tag--negative': message.sentiment.label === 'negative',
+            'msg-bubble__tag--neutral': message.sentiment.label === 'neutral',
+          }"
+        >
+          情感：{{ getSentimentLabel(message.sentiment.label) }}
+        </span>
+      </div>
 
       <!-- 消息文本 -->
       <div class="msg-bubble__text">
@@ -84,15 +99,40 @@ function formatTime(ts) {
   border-bottom-left-radius: var(--space-xs);
 }
 
-.msg-bubble__intent-tag {
+.msg-bubble__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-sm);
+}
+
+.msg-bubble__tag {
   display: inline-block;
   font-size: var(--font-size-xs);
-  padding: 1px 6px;
-  border-radius: var(--radius-sm);
+  padding: 1px 8px;
+  border-radius: var(--radius-full);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.6;
+}
+
+.msg-bubble__tag--intent {
   background-color: var(--color-accent-blue-bg);
   color: var(--color-accent-blue);
-  margin-bottom: var(--space-sm);
-  font-weight: var(--font-weight-medium);
+}
+
+.msg-bubble__tag--positive {
+  background-color: #e6f7ed;
+  color: #1a7d3a;
+}
+
+.msg-bubble__tag--negative {
+  background-color: #fde8e8;
+  color: #c53030;
+}
+
+.msg-bubble__tag--neutral {
+  background-color: #edf2f7;
+  color: #718096;
 }
 
 .msg-bubble__text {

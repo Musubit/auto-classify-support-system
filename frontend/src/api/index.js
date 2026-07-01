@@ -22,13 +22,14 @@ export const http = axios.create({
  * @param {string} message - 用户消息文本
  * @param {object} callbacks - 事件回调
  * @param {function} [callbacks.onIntent] - 收到 intent 事件时调用
+ * @param {function} [callbacks.onSentiment] - 收到 sentiment 事件时调用
  * @param {function} [callbacks.onToken] - 收到 token 事件时调用
  * @param {function} [callbacks.onDone] - 收到 done 事件时调用
  * @param {function} [callbacks.onError] - 出错或收到 error 事件时调用
  * @returns {Promise<void>}
  */
 export async function streamChat(sessionId, message, callbacks = {}) {
-  const { onIntent, onToken, onDone, onError } = callbacks;
+  const { onIntent, onSentiment, onToken, onDone, onError } = callbacks;
 
   let response;
   try {
@@ -82,7 +83,7 @@ export async function streamChat(sessionId, message, callbacks = {}) {
             const jsonStr = line.slice(6);
             try {
               const data = JSON.parse(jsonStr);
-              dispatchEvent(currentEvent, data, { onIntent, onToken, onDone, onError });
+              dispatchEvent(currentEvent, data, { onIntent, onSentiment, onToken, onDone, onError });
             } catch {
               // JSON 解析失败，跳过
             }
@@ -106,6 +107,9 @@ function dispatchEvent(event, data, callbacks) {
   switch (event) {
     case 'intent':
       if (callbacks.onIntent) callbacks.onIntent(data);
+      break;
+    case 'sentiment':
+      if (callbacks.onSentiment) callbacks.onSentiment(data);
       break;
     case 'token':
       if (callbacks.onToken) callbacks.onToken(data.token);

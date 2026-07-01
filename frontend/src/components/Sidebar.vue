@@ -1,5 +1,6 @@
 <script setup>
 import { ref } from 'vue';
+import { useChatStore } from '@/stores/chat';
 
 const props = defineProps({
   collapsed: { type: Boolean, default: false },
@@ -7,11 +8,17 @@ const props = defineProps({
 
 const emit = defineEmits(['toggle']);
 
+const chatStore = useChatStore();
 const activeNav = ref('chat');
 
 const navItems = [
   { id: 'chat', label: '智能客服', icon: 'chat', badge: null },
 ];
+
+function handleNewSession() {
+  chatStore.clearSession();
+  activeNav.value = 'chat';
+}
 </script>
 
 <template>
@@ -93,6 +100,7 @@ const navItems = [
         <button
           v-if="collapsed"
           title="新建会话"
+          @click="handleNewSession"
           :style="{
             width: '22px',
             height: '22px',
@@ -113,6 +121,33 @@ const navItems = [
           </svg>
         </button>
       </div>
+
+      <!-- 新建对话按钮（展开态） -->
+      <button
+        v-if="!collapsed"
+        @click="handleNewSession"
+        :style="{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '8px 12px',
+          borderRadius: '8px',
+          color: '#1d1d1f',
+          fontSize: '14px',
+          fontWeight: '500',
+          border: '1px solid #e5e5e7',
+          background: '#ffffff',
+          cursor: 'pointer',
+          width: '100%',
+          marginBottom: '12px',
+          transition: 'border-color 0.15s ease',
+        }"
+      >
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+          <path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+        </svg>
+        新建对话
+      </button>
 
       <!-- Navigation (hidden when collapsed) -->
       <nav
