@@ -48,6 +48,22 @@ def generate_intent_event(intent: str, confidence: float) -> str:
     )
 
 
+def generate_sentiment_event(label: str, score: float) -> str:
+    """生成情感分析结果的 SSE 事件。
+
+    Args:
+        label: 情感标签，"positive" / "negative" / "neutral"。
+        score: 置信度，范围 [0, 1]。
+
+    Returns:
+        str: SSE 事件字符串。
+    """
+    return format_sse_event(
+        "sentiment",
+        {"label": label, "score": score},
+    )
+
+
 def generate_token_event(token: str) -> str:
     """生成单个 token 的 SSE 事件。
 

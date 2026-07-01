@@ -34,5 +34,21 @@ def create_app(config_class: type = Config) -> Flask:
 
     app.register_blueprint(api_bp, url_prefix="/api")
 
+    # 异步初始化检索服务（不阻塞启动）
+    try:
+        from app.services.retriever import init as init_retriever
+
+        init_retriever()
+    except Exception as e:
+        logger.warning("检索服务初始化跳过: %s", e)
+
+    # 异步初始化情感分析服务（不阻塞启动）
+    try:
+        from app.services.sentiment import init as init_sentiment
+
+        init_sentiment()
+    except Exception as e:
+        logger.warning("情感分析服务初始化跳过: %s", e)
+
     logger.info("Flask 应用初始化完成")
     return app

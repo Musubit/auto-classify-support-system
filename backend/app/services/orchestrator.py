@@ -1,10 +1,11 @@
-"""编排器服务 — 协调意图分类、LLM 生成与 SSE 流式输出。
+"""编排器服务 — 协调意图分类、情感分析、FAQ 检索与 LLM 生成的 RAG 流程。
 
 核心流程：
 1. 意图分类（NLP 微服务）
-2. （待接入）ES FAQ 检索
-3. DeepSeek LLM 流式生成
-4. SSE 逐 token 推送
+2. 情感分析（BERT 模型）
+3. FAQ 检索（BGE 向量 + 关键词混合）
+4. DeepSeek LLM 流式生成（RAG 增强）
+5. SSE 逐 token 推送
 """
 
 import uuid
@@ -14,10 +15,13 @@ from flask import current_app
 
 from app.services.classifier import classify_intent
 from app.services.llm import generate_stream
+from app.services.retriever import format_context, search_faq
+from app.services.sentiment import analyze as analyze_sentiment
 from app.utils.sse import (
     generate_done_event,
     generate_error_event,
     generate_intent_event,
+    generate_sentiment_event,
     generate_token_event,
 )
 
@@ -25,12 +29,11 @@ from app.utils.sse import (
 def orchestrate(session_id: str, message: str) -> Generator[str, None, None]:
     """编排一次对话请求的处理流程，以 SSE 事件流方式返回。
 
-    当前流程：
-    1. 调用 NLP 服务进行意图分类
-    2. 发送意图事件
-    3. （待接入）ES FAQ 检索
-    4. 调用 DeepSeek LLM 流式生成
-    5. 逐 token 发送 + done 事件
+    SSE 事件序列：
+        event: intent     — 意图分类结果
+        event: sentiment  — 情感分析结果
+        event: token      — 逐字回答（多次）
+        event: done       — 回答完成
 
     Args:
         session_id: 会话 ID。
@@ -57,15 +60,29 @@ def orchestrate(session_id: str, message: str) -> Generator[str, None, None]:
         # 2. 发送意图事件
         yield generate_intent_event(intent, confidence)
 
-        # 3. TODO: ES FAQ 检索（后续接入 retriever）
+        # 3. 情感分析
+        sentiment = analyze_sentiment(message)
+        yield generate_sentiment_event(sentiment["label"], sentiment["score"])
+        logger.info(
+            "会话 %s 情感分析: label=%s score=%.4f",
+            session_id,
+            sentiment["label"],
+            sentiment["score"],
+        )
 
-        # 4. 调用 DeepSeek LLM 流式生成
+        # 4. FAQ 检索
+        faq_results = search_faq(message, top_k=3, score_threshold=0.4)
+        context = format_context(faq_results)
+        if context:
+            logger.info("会话 %s FAQ 检索: hits=%d", session_id, len(faq_results))
+
+        # 5. 调用 DeepSeek LLM 流式生成（带 RAG 上下文）
         full_answer = ""
-        for token in generate_stream(message, intent):
+        for token in generate_stream(message, intent, context=context or None):
             full_answer += token
             yield generate_token_event(token)
 
-        # 5. 发送完成事件
+        # 6. 发送完成事件
         yield generate_done_event(message_id, full_answer, source="llm")
         logger.info("会话 %s 回复完成: message_id=%s len=%d", session_id, message_id, len(full_answer))
 
