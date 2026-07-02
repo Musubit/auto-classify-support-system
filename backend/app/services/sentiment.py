@@ -8,6 +8,8 @@ import logging
 import os
 from typing import Optional
 
+from flask import current_app
+
 logger = logging.getLogger(__name__)
 
 # 全局懒加载实例
@@ -85,7 +87,11 @@ def analyze(text: str) -> dict:
         return {"label": "neutral", "score": 0.0}
 
     # 置信度阈值：低于此值视为模型在"硬猜"，归为 neutral
-    threshold = float(os.getenv("SENTIMENT_THRESHOLD", "0.85"))
+    try:
+        threshold = float(current_app.config.get("SENTIMENT_THRESHOLD", "0.85"))
+    except RuntimeError:
+        # 无应用上下文时回退到环境变量
+        threshold = float(os.getenv("SENTIMENT_THRESHOLD", "0.85"))
 
     try:
         result = pipe(text)

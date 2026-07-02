@@ -25,9 +25,11 @@ def chat():
       并由 LLM 生成回答。通过 Server-Sent Events 流式推送结果。
 
       **SSE 事件序列：**
-      - `event: meta` — 元信息（意图标签、情感标签、检索命中数）
+      - `event: intent` — 意图分类结果（intent + confidence）
+      - `event: sentiment` — 情感分析结果（label + score）
+      - `event: entity` — 实体抽取结果（如有）
       - `event: token` — 逐字回答（多次）
-      - `event: done` — 回答完成，含完整文本
+      - `event: done` — 回答完成，含完整文本和 message_id
       - `event: error` — 发生错误时
     parameters:
       - in: body

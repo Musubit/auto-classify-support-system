@@ -67,6 +67,13 @@ def create_app(config_class: type = Config) -> Flask:
     }
     Swagger(app, config=swagger_config, template=swagger_template)
 
+    # ─── NLP 适配器初始化 ───
+    from app.services.nlp_client import NLPClient
+
+    app.extensions["nlp"] = NLPClient(
+        base_url=app.config.get("NLP_SERVER_URL", "http://localhost:5005"),
+    )
+
     # ─── SQLite 数据库初始化 ───
     try:
         from app.services.db import init_db
@@ -81,9 +88,9 @@ def create_app(config_class: type = Config) -> Flask:
 
     # 异步初始化检索服务（不阻塞启动）
     try:
-        from app.services.retriever import init as init_retriever
+        from app.services.retriever import init_retriever
 
-        init_retriever()
+        init_retriever(app)
     except Exception as e:
         logger.warning("检索服务初始化跳过: %s", e)
 

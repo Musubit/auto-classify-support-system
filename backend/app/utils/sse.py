@@ -120,3 +120,63 @@ def generate_error_event(message: str) -> str:
         str: SSE 事件字符串。
     """
     return format_sse_event("error", {"message": message})
+
+
+# ─── SSEEmitter — 面向对象的 SSE 事件发射器 ──────────────────
+
+
+class SSEEmitter:
+    """SSE 事件发射器，封装全部事件名、数据结构与格式化知识。
+
+    所有 SSE 格式决策集中于此单一 seam——变更事件协议（如新增字段、
+    切换传输格式）只需修改此类的实现，orchestrator 等调用者不受影响。
+
+    用法:
+        emitter = SSEEmitter()
+        yield emitter.intent({"intent": "logistics", "confidence": 0.95})
+        yield emitter.token("你")
+        yield emitter.done("msg_abc", "你好，请问...", source="llm")
+    """
+
+    # ─── 分析事件 ──────────────────────────────────────
+
+    @staticmethod
+    def intent(data: dict) -> str:
+        """意图分类结果事件。data 需含 intent 和 confidence 字段。"""
+        return format_sse_event("intent", data)
+
+    @staticmethod
+    def sentiment(data: dict) -> str:
+        """情感分析结果事件。data 需含 label 和 score 字段。"""
+        return format_sse_event("sentiment", data)
+
+    @staticmethod
+    def entity(data: dict) -> str:
+        """实体抽取结果事件。data 需含 entities 和 summary 字段。"""
+        return format_sse_event("entity", data)
+
+    # ─── 流式事件 ──────────────────────────────────────
+
+    @staticmethod
+    def token(text: str) -> str:
+        """单个 token 事件。"""
+        return format_sse_event("token", {"token": text})
+
+    @staticmethod
+    def done(message_id: str, full_answer: str, source: str = "llm") -> str:
+        """流式完成事件。"""
+        return format_sse_event(
+            "done",
+            {
+                "message_id": message_id,
+                "full_answer": full_answer,
+                "source": source,
+            },
+        )
+
+    # ─── 错误事件 ──────────────────────────────────────
+
+    @staticmethod
+    def error(message: str) -> str:
+        """错误事件。"""
+        return format_sse_event("error", {"message": message})

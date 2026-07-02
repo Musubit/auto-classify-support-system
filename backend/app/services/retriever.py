@@ -4,6 +4,9 @@
 1. ES 混合模式（生产）：kNN 向量搜索 + BM25 文本搜索 → RRF 融合
 2. 内存向量模式（无 ES）：BGE 余弦相似度
 3. 关键词回退（无模型）：difflib 序列匹配
+
+架构：Retriever 类封装全部状态（embedder / faq_store / faq_vectors / es_available），
+消除了模块级全局变量，使测试可以创建独立实例而无顺序依赖。
 """
 
 import logging
@@ -11,18 +14,9 @@ import os
 from typing import Optional
 
 import numpy as np
+from flask import current_app
 
 logger = logging.getLogger(__name__)
-
-# 全局懒加载实例
-_embedder = None
-_faq_store: list[dict] = []
-_faq_vectors: Optional[np.ndarray] = None
-_es_available: bool = False
-
-# BGE base 向量维度
-VECTOR_DIMS = int(os.getenv("EMBEDDING_DIMS", "768"))
-
 
 # ─── FAQ 种子数据 ───
 
@@ -52,325 +46,379 @@ FAQ_SEED_DATA: list[dict] = [
 ]
 
 
-# ─── 向量模型 ───
-
-def _load_embedder():
-    """懒加载 BGE 向量模型。"""
-    global _embedder
-    if _embedder is not None:
-        return _embedder
-
-    try:
-        from sentence_transformers import SentenceTransformer
-
-        model_name = os.getenv("EMBEDDING_MODEL", "BAAI/bge-base-zh-v1.5")
-        logger.info("加载向量模型: %s", model_name)
-        _embedder = SentenceTransformer(model_name)
-        return _embedder
-    except ImportError:
-        logger.warning("sentence-transformers 未安装，将使用 fallback 模式")
-        return None
-    except Exception as e:
-        logger.error("加载向量模型失败: %s", e)
-        return None
+# ─── Retriever 类 ─────────────────────────────────────────
 
 
-# ─── ES 模式 ───
+class Retriever:
+    """FAQ 检索器，封装 embedder、faq_store、faq_vectors、ES 状态。
 
-def _get_es():
-    """获取 ES 客户端，不可用时返回 None。"""
-    try:
-        from app.extensions import get_es_client
-        return get_es_client()
-    except Exception:
-        return None
+    所有状态均为实例属性——测试可创建独立实例，零全局污染。
+    通过 Flask app.extensions 注入，避免模块级单例。
 
+    Attributes:
+        es_host: Elasticsearch 连接地址。
+        es_index: ES 索引名称。
+        embedding_model: sentence-transformers 模型名。
+        vector_dims: 向量维度。
+    """
 
-def _ensure_es_index(es, index_name: str) -> bool:
-    """确保 ES 索引存在并配置 mapping（幂等）。"""
-    try:
-        if not es.indices.exists(index=index_name):
-            es.indices.create(
-                index=index_name,
-                body={
-                    "settings": {"number_of_shards": 1, "number_of_replicas": 0},
-                    "mappings": {
-                        "properties": {
-                            "question": {"type": "text", "analyzer": "standard"},
-                            "answer": {"type": "text", "analyzer": "standard"},
-                            "category": {"type": "keyword"},
-                            "question_vector": {
-                                "type": "dense_vector",
-                                "dims": VECTOR_DIMS,
-                                "index": True,
-                                "similarity": "cosine",
-                            },
-                        }
+    def __init__(
+        self,
+        es_host: str = "http://localhost:9200",
+        es_index: str = "faq",
+        embedding_model: str = "BAAI/bge-base-zh-v1.5",
+        vector_dims: int = 768,
+    ) -> None:
+        self.es_host = es_host
+        self.es_index = es_index
+        self.embedding_model = embedding_model
+        self.vector_dims = vector_dims
+
+        # 实例状态（非全局）
+        self._embedder = None
+        self._faq_store: list[dict] = []
+        self._faq_vectors: Optional[np.ndarray] = None
+        self._es_available: bool = False
+
+    # ─── 初始化 ──────────────────────────────────────
+
+    def initialize(self) -> None:
+        """初始化检索服务：ES 索引 + 内存索引 FAQ。
+
+        幂等——重复调用安全。
+        """
+        # 1. 内存索引（始终启用）
+        count = self._index_faq()
+        if count > 0:
+            logger.info("检索服务初始化完成（内存）: %d 条 FAQ", count)
+        else:
+            logger.warning("检索服务未加载向量模型，将使用关键词匹配")
+
+        # 2. ES 索引（可选，失败不影响服务）
+        try:
+            es_count = self._es_index_faq(FAQ_SEED_DATA)
+            if es_count > 0:
+                self._es_available = True
+                logger.info("检索服务 ES 模式已启用: %d 条 FAQ", es_count)
+            else:
+                logger.info("ES 不可用，使用内存检索模式")
+        except Exception as e:
+            logger.warning("ES 初始化跳过: %s", e)
+
+    # ─── 向量模型（懒加载） ──────────────────────────
+
+    def _load_embedder(self):
+        """懒加载 BGE 向量模型。"""
+        if self._embedder is not None:
+            return self._embedder
+
+        try:
+            from sentence_transformers import SentenceTransformer
+
+            logger.info("加载向量模型: %s", self.embedding_model)
+            self._embedder = SentenceTransformer(self.embedding_model)
+            return self._embedder
+        except ImportError:
+            logger.warning("sentence-transformers 未安装，将使用 fallback 模式")
+            return None
+        except Exception as e:
+            logger.error("加载向量模型失败: %s", e)
+            return None
+
+    # ─── ES 辅助方法 ─────────────────────────────────
+
+    def _get_es(self):
+        """获取 ES 客户端，不可用时返回 None。"""
+        try:
+            from app.extensions import get_es_client
+            return get_es_client()
+        except Exception:
+            return None
+
+    def _ensure_es_index(self, es, index_name: str) -> bool:
+        """确保 ES 索引存在并配置 mapping（幂等）。"""
+        try:
+            if not es.indices.exists(index=index_name):
+                es.indices.create(
+                    index=index_name,
+                    body={
+                        "settings": {"number_of_shards": 1, "number_of_replicas": 0},
+                        "mappings": {
+                            "properties": {
+                                "question": {"type": "text", "analyzer": "standard"},
+                                "answer": {"type": "text", "analyzer": "standard"},
+                                "category": {"type": "keyword"},
+                                "question_vector": {
+                                    "type": "dense_vector",
+                                    "dims": self.vector_dims,
+                                    "index": True,
+                                    "similarity": "cosine",
+                                },
+                            }
+                        },
                     },
-                },
+                )
+                logger.info("ES 索引已创建: %s", index_name)
+            return True
+        except Exception as e:
+            logger.warning("ES 索引创建失败: %s", e)
+            return False
+
+    def _es_index_faq(self, faq_data: list[dict]) -> int:
+        """将 FAQ 批量写入 ES（含向量）。"""
+        es = self._get_es()
+        if es is None:
+            return 0
+
+        if not self._ensure_es_index(es, self.es_index):
+            return 0
+
+        embedder = self._load_embedder()
+        if embedder is None:
+            logger.warning("向量模型不可用，ES 索引跳过")
+            return 0
+
+        try:
+            from elasticsearch.helpers import bulk
+
+            questions = [item["question"] for item in faq_data]
+            vectors = embedder.encode(questions, normalize_embeddings=True)
+
+            actions = []
+            for i, item in enumerate(faq_data):
+                actions.append({
+                    "_index": self.es_index,
+                    "_id": item["id"],
+                    "_source": {
+                        "question": item["question"],
+                        "answer": item["answer"],
+                        "category": item.get("category", ""),
+                        "question_vector": vectors[i].tolist(),
+                    },
+                })
+
+            # 先清空再写入（确保幂等）
+            es.delete_by_query(
+                index=self.es_index,
+                body={"query": {"match_all": {}}},
+                refresh=True,
             )
-            logger.info("ES 索引已创建: %s", index_name)
-        return True
-    except Exception as e:
-        logger.warning("ES 索引创建失败: %s", e)
-        return False
+            success, _ = bulk(es, actions, refresh=True)
+            logger.info("ES FAQ 索引完成: %d/%d 条", success, len(faq_data))
+            return success
+        except Exception as e:
+            logger.error("ES FAQ 索引失败: %s", e)
+            return 0
 
+    def _es_hybrid_search(
+        self, query: str, top_k: int, score_threshold: float,
+    ) -> list[dict]:
+        """ES kNN 向量 + BM25 混合检索（RRF 融合）。"""
+        es = self._get_es()
+        if es is None:
+            return []
 
-def _es_index_faq(faq_data: list[dict], index_name: str) -> int:
-    """将 FAQ 批量写入 ES（含向量）。"""
-    es = _get_es()
-    if es is None:
-        return 0
+        embedder = self._load_embedder()
+        if embedder is None:
+            return []
 
-    if not _ensure_es_index(es, index_name):
-        return 0
+        try:
+            query_vec = embedder.encode([query], normalize_embeddings=True)[0].tolist()
 
-    embedder = _load_embedder()
-    if embedder is None:
-        logger.warning("向量模型不可用，ES 索引跳过")
-        return 0
-
-    try:
-        from elasticsearch.helpers import bulk
-
-        questions = [item["question"] for item in faq_data]
-        vectors = embedder.encode(questions, normalize_embeddings=True)
-
-        actions = []
-        for i, item in enumerate(faq_data):
-            actions.append({
-                "_index": index_name,
-                "_id": item["id"],
-                "_source": {
-                    "question": item["question"],
-                    "answer": item["answer"],
-                    "category": item.get("category", ""),
-                    "question_vector": vectors[i].tolist(),
+            body = {
+                "knn": {
+                    "field": "question_vector",
+                    "query_vector": query_vec,
+                    "k": top_k * 2,
+                    "num_candidates": 32,
                 },
-            })
+                "query": {
+                    "match": {"question": {"query": query, "boost": 0.3}}
+                },
+                "size": top_k,
+            }
 
-        # 先清空再写入（确保幂等）
-        es.delete_by_query(
-            index=index_name,
-            body={"query": {"match_all": {}}},
-            refresh=True,
-        )
+            resp = es.search(index=self.es_index, body=body)
+            hits = resp["hits"]["hits"]
 
-        success, _ = bulk(es, actions, refresh=True)
-        logger.info("ES FAQ 索引完成: %d/%d 条", success, len(faq_data))
-        return success
-    except Exception as e:
-        logger.error("ES FAQ 索引失败: %s", e)
-        return 0
+            results = []
+            for hit in hits:
+                score = float(hit["_score"])
+                norm_score = min(score / 2.0, 1.0)
+                if norm_score < score_threshold:
+                    continue
+                src = hit["_source"]
+                results.append({
+                    "id": hit["_id"],
+                    "question": src["question"],
+                    "answer": src["answer"],
+                    "category": src.get("category", ""),
+                    "score": round(norm_score, 4),
+                })
 
+            logger.info("ES 混合检索: query=%s hits=%d", query[:30], len(results))
+            return results
+        except Exception as e:
+            logger.error("ES 检索失败: %s，回退内存模式", e)
+            return []
 
-def _es_hybrid_search(
-    query: str,
-    index_name: str,
-    top_k: int,
-    score_threshold: float,
-) -> list[dict]:
-    """ES kNN 向量 + BM25 混合检索（RRF 融合）。"""
-    es = _get_es()
-    if es is None:
-        return []
+    # ─── 内存索引 ────────────────────────────────────
 
-    embedder = _load_embedder()
-    if embedder is None:
-        return []
+    def _index_faq(self, faq_data: Optional[list[dict]] = None) -> int:
+        """将 FAQ 数据编码为向量并存入内存索引。"""
+        data = faq_data or FAQ_SEED_DATA
+        self._faq_store = data
 
-    try:
-        query_vec = embedder.encode([query], normalize_embeddings=True)[0].tolist()
+        embedder = self._load_embedder()
+        if embedder is None:
+            self._faq_vectors = None
+            logger.warning("向量模型不可用，FAQ 仅支持关键词匹配")
+            return 0
 
-        # 单次查询同时做 kNN + BM25，ES 8.12+ 支持 knn 子句
-        body = {
-            "knn": {
-                "field": "question_vector",
-                "query_vector": query_vec,
-                "k": top_k * 2,
-                "num_candidates": 32,
-            },
-            "query": {
-                "match": {"question": {"query": query, "boost": 0.3}}
-            },
-            "size": top_k,
-        }
+        questions = [item["question"] for item in data]
+        vectors = embedder.encode(questions, normalize_embeddings=True)
+        self._faq_vectors = np.array(vectors)
+        logger.info("FAQ 内存索引完成: %d 条", len(data))
+        return len(data)
 
-        resp = es.search(index=index_name, body=body)
-        hits = resp["hits"]["hits"]
+    def _vector_search(
+        self, query: str, top_k: int, score_threshold: float,
+    ) -> list[dict]:
+        """BGE 向量余弦相似度搜索。"""
+        embedder = self._load_embedder()
+        if embedder is None or self._faq_vectors is None:
+            return []
+
+        query_vec = embedder.encode([query], normalize_embeddings=True)[0]
+        scores = np.dot(self._faq_vectors, query_vec)
+
+        top_indices = np.argsort(scores)[::-1][:top_k]
 
         results = []
-        for hit in hits:
-            score = float(hit["_score"])
-            # ES 分数归一化到 [0, 1]
-            norm_score = min(score / 2.0, 1.0)
-            if norm_score < score_threshold:
+        for i in top_indices:
+            score = float(scores[i])
+            if score < score_threshold:
                 continue
-            src = hit["_source"]
+            item = self._faq_store[i]
             results.append({
-                "id": hit["_id"],
-                "question": src["question"],
-                "answer": src["answer"],
-                "category": src.get("category", ""),
-                "score": round(norm_score, 4),
+                "id": item["id"],
+                "question": item["question"],
+                "answer": item["answer"],
+                "category": item.get("category", ""),
+                "score": round(score, 4),
             })
 
-        logger.info("ES 混合检索: query=%s hits=%d", query[:30], len(results))
+        logger.info("向量检索: query=%s hits=%d", query[:30], len(results))
         return results
-    except Exception as e:
-        logger.error("ES 检索失败: %s，回退内存模式", e)
-        return []
+
+    def _keyword_search(self, query: str, top_k: int) -> list[dict]:
+        """简单关键词匹配回退方案。"""
+        from difflib import SequenceMatcher
+
+        scored = []
+        for item in self._faq_store:
+            ratio = SequenceMatcher(None, query, item["question"]).ratio()
+            scored.append((ratio, item))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        results = []
+        for score, item in scored[:top_k]:
+            results.append({
+                "id": item["id"],
+                "question": item["question"],
+                "answer": item["answer"],
+                "category": item.get("category", ""),
+                "score": round(score, 4),
+            })
+
+        logger.info("关键词检索: query=%s hits=%d", query[:30], len(results))
+        return results
+
+    # ─── 公开接口 ────────────────────────────────────
+
+    def search(
+        self,
+        query: str,
+        top_k: int = 3,
+        score_threshold: float = 0.5,
+    ) -> list[dict]:
+        """检索 FAQ — 自动选择最优模式：ES 混合 > 内存向量 > 关键词。
+
+        Args:
+            query: 用户查询文本。
+            top_k: 返回的最多 FAQ 条数。
+            score_threshold: 最低相似度阈值。
+
+        Returns:
+            list[dict]: FAQ 匹配结果。
+        """
+        if not self._faq_store:
+            logger.warning("FAQ 索引为空，请先调用 initialize()")
+            return []
+
+        # 1. 优先 ES 混合检索
+        if self._es_available:
+            results = self._es_hybrid_search(query, top_k, score_threshold)
+            if results:
+                return results
+
+        # 2. 内存向量检索
+        embedder = self._load_embedder()
+        if embedder is not None and self._faq_vectors is not None:
+            return self._vector_search(query, top_k, score_threshold)
+
+        # 3. 关键词回退
+        return self._keyword_search(query, top_k)
+
+    @staticmethod
+    def format_context(results: list[dict]) -> str:
+        """将检索结果格式化为 LLM 可用的上下文文本。"""
+        if not results:
+            return ""
+
+        parts = []
+        for i, r in enumerate(results, 1):
+            parts.append(f"[{i}] 问题: {r['question']}\n    答案: {r['answer']}")
+        return "\n\n".join(parts)
 
 
-# ─── 内存向量模式 ───
-
-def index_faq(faq_data: Optional[list[dict]] = None) -> int:
-    """将 FAQ 数据编码为向量并存入内存索引。
-
-    Returns:
-        int: 已索引的 FAQ 数量。
-    """
-    global _faq_store, _faq_vectors
-
-    data = faq_data or FAQ_SEED_DATA
-    _faq_store = data
-
-    embedder = _load_embedder()
-    if embedder is None:
-        _faq_vectors = None
-        logger.warning("向量模型不可用，FAQ 仅支持关键词匹配")
-        return 0
-
-    questions = [item["question"] for item in data]
-    vectors = embedder.encode(questions, normalize_embeddings=True)
-    _faq_vectors = np.array(vectors)
-    logger.info("FAQ 内存索引完成: %d 条", len(data))
-    return len(data)
+# ─── 模块级兼容函数（通过 Flask app.extensions 获取实例） ──
 
 
-def _vector_search(
-    query: str,
-    top_k: int,
-    score_threshold: float,
-    embedder,
-) -> list[dict]:
-    """BGE 向量余弦相似度搜索。"""
-    query_vec = embedder.encode([query], normalize_embeddings=True)[0]
-    scores = np.dot(_faq_vectors, query_vec)
+def _get_retriever() -> Retriever:
+    """从 Flask app.extensions 获取全局 Retriever 实例。"""
+    return current_app.extensions["retriever"]
 
-    top_indices = np.argsort(scores)[::-1][:top_k]
-
-    results = []
-    for i in top_indices:
-        score = float(scores[i])
-        if score < score_threshold:
-            continue
-        item = _faq_store[i]
-        results.append({
-            "id": item["id"],
-            "question": item["question"],
-            "answer": item["answer"],
-            "category": item.get("category", ""),
-            "score": round(score, 4),
-        })
-
-    logger.info("向量检索: query=%s hits=%d", query[:30], len(results))
-    return results
-
-
-def _keyword_search(query: str, top_k: int) -> list[dict]:
-    """简单关键词匹配回退方案。"""
-    from difflib import SequenceMatcher
-
-    scored = []
-    for item in _faq_store:
-        ratio = SequenceMatcher(None, query, item["question"]).ratio()
-        scored.append((ratio, item))
-
-    scored.sort(key=lambda x: x[0], reverse=True)
-    results = []
-    for score, item in scored[:top_k]:
-        results.append({
-            "id": item["id"],
-            "question": item["question"],
-            "answer": item["answer"],
-            "category": item.get("category", ""),
-            "score": round(score, 4),
-        })
-
-    logger.info("关键词检索: query=%s hits=%d", query[:30], len(results))
-    return results
-
-
-# ─── 统一检索入口 ───
 
 def search_faq(
     query: str,
     top_k: int = 3,
     score_threshold: float = 0.5,
 ) -> list[dict]:
-    """检索 FAQ — 自动选择最优模式：ES 混合 > 内存向量 > 关键词。
-
-    Args:
-        query: 用户查询文本。
-        top_k: 返回的最多 FAQ 条数。
-        score_threshold: 最低相似度阈值。
-
-    Returns:
-        list[dict]: FAQ 匹配结果。
-    """
-    if not _faq_store:
-        logger.warning("FAQ 索引为空，请先调用 index_faq()")
-        return []
-
-    # 1. 优先 ES 混合检索
-    if _es_available:
-        index_name = os.getenv("ES_INDEX", "faq")
-        results = _es_hybrid_search(query, index_name, top_k, score_threshold)
-        if results:
-            return results
-
-    # 2. 内存向量检索
-    embedder = _load_embedder()
-    if embedder is not None and _faq_vectors is not None:
-        return _vector_search(query, top_k, score_threshold, embedder)
-
-    # 3. 关键词回退
-    return _keyword_search(query, top_k)
+    """检索 FAQ（模块级兼容函数，委托给 Retriever 实例）。"""
+    return _get_retriever().search(query, top_k, score_threshold)
 
 
 def format_context(results: list[dict]) -> str:
-    """将检索结果格式化为 LLM 可用的上下文文本。"""
-    if not results:
-        return ""
-
-    parts = []
-    for i, r in enumerate(results, 1):
-        parts.append(f"[{i}] 问题: {r['question']}\n    答案: {r['answer']}")
-    return "\n\n".join(parts)
+    """格式化 FAQ 结果为 LLM 上下文（模块级兼容函数）。"""
+    return Retriever.format_context(results)
 
 
-# ─── 初始化 ───
+# ─── 应用工厂辅助 ─────────────────────────────────────────
 
-def init() -> None:
-    """初始化检索服务：ES 索引 + 内存索引 FAQ。"""
-    global _es_available
 
-    # 1. 内存索引（始终启用）
-    count = index_faq()
-    if count > 0:
-        logger.info("检索服务初始化完成（内存）: %d 条 FAQ", count)
-    else:
-        logger.warning("检索服务未加载向量模型，将使用关键词匹配")
+def init_retriever(app) -> None:
+    """在 Flask 应用中初始化 Retriever 实例并存入 app.extensions。
 
-    # 2. ES 索引（可选，失败不影响服务）
-    try:
-        index_name = os.getenv("ES_INDEX", "faq")
-        es_count = _es_index_faq(FAQ_SEED_DATA, index_name)
-        if es_count > 0:
-            _es_available = True
-            logger.info("检索服务 ES 模式已启用: %d 条 FAQ", es_count)
-        else:
-            logger.info("ES 不可用，使用内存检索模式")
-    except Exception as e:
-        logger.warning("ES 初始化跳过: %s", e)
+    Args:
+        app: Flask 应用实例。
+    """
+    retriever = Retriever(
+        es_host=app.config.get("ES_HOST", "http://localhost:9200"),
+        es_index=app.config.get("ES_INDEX", "faq"),
+        embedding_model=os.getenv("EMBEDDING_MODEL", "BAAI/bge-base-zh-v1.5"),
+        vector_dims=int(os.getenv("EMBEDDING_DIMS", "768")),
+    )
+    retriever.initialize()
+    app.extensions["retriever"] = retriever
+    logger.info("Retriever 已初始化并注册到 app.extensions")
