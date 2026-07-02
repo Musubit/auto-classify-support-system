@@ -23,13 +23,14 @@ export const http = axios.create({
  * @param {object} callbacks - 事件回调
  * @param {function} [callbacks.onIntent] - 收到 intent 事件时调用
  * @param {function} [callbacks.onSentiment] - 收到 sentiment 事件时调用
+ * @param {function} [callbacks.onEntity] - 收到 entity 事件时调用
  * @param {function} [callbacks.onToken] - 收到 token 事件时调用
  * @param {function} [callbacks.onDone] - 收到 done 事件时调用
  * @param {function} [callbacks.onError] - 出错或收到 error 事件时调用
  * @returns {Promise<void>}
  */
 export async function streamChat(sessionId, message, callbacks = {}) {
-  const { onIntent, onSentiment, onToken, onDone, onError } = callbacks;
+  const { onIntent, onSentiment, onEntity, onToken, onDone, onError } = callbacks;
 
   let response;
   try {
@@ -83,7 +84,7 @@ export async function streamChat(sessionId, message, callbacks = {}) {
             const jsonStr = line.slice(6);
             try {
               const data = JSON.parse(jsonStr);
-              dispatchEvent(currentEvent, data, { onIntent, onSentiment, onToken, onDone, onError });
+              dispatchEvent(currentEvent, data, { onIntent, onSentiment, onEntity, onToken, onDone, onError });
             } catch {
               // JSON 解析失败，跳过
             }
@@ -111,6 +112,9 @@ function dispatchEvent(event, data, callbacks) {
     case 'sentiment':
       if (callbacks.onSentiment) callbacks.onSentiment(data);
       break;
+    case 'entity':
+      if (callbacks.onEntity) callbacks.onEntity(data);
+      break;
     case 'token':
       if (callbacks.onToken) callbacks.onToken(data.token);
       break;
@@ -121,4 +125,34 @@ function dispatchEvent(event, data, callbacks) {
       if (callbacks.onError) callbacks.onError(data.message || '未知错误');
       break;
   }
+}
+
+// ─── Session API ───
+
+/**
+ * 获取会话列表。
+ * @returns {Promise<Array>}
+ */
+export async function listSessions() {
+  const { data } = await http.get('/sessions');
+  return data.data || [];
+}
+
+/**
+ * 获取单个会话详情（含消息）。
+ * @param {string} sessionId
+ * @returns {Promise<{session: object, messages: Array}>}
+ */
+export async function getSession(sessionId) {
+  const { data } = await http.get(`/sessions/${sessionId}`);
+  return data.data;
+}
+
+/**
+ * 删除会话。
+ * @param {string} sessionId
+ * @returns {Promise<void>}
+ */
+export async function deleteSessionApi(sessionId) {
+  await http.delete(`/sessions/${sessionId}`);
 }

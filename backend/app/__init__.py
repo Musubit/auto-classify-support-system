@@ -5,6 +5,11 @@ import os
 
 from flask import Flask
 from flask_cors import CORS
+from flasgger import Swagger
+
+# 必须在加载模型前设置，解决 Windows 下 filelock 死锁 + HF 镜像
+os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+os.environ.setdefault("HF_HUB_DISABLE_FILELOCK", "1")
 
 from app.config import Config
 
@@ -29,6 +34,46 @@ def create_app(config_class: type = Config) -> Flask:
     if app.config.get("FLASK_ENV") == "development" and not cors_origins:
         cors_origins = "*"
     CORS(app, resources={r"/api/*": {"origins": cors_origins.split(",")}})
+
+    # ─── Swagger / OpenAPI 文档 ───
+    swagger_config = {
+        "headers": [],
+        "specs": [
+            {
+                "endpoint": "apispec",
+                "route": "/apispec.json",
+                "rule_filter": lambda rule: True,
+                "model_filter": lambda tag: True,
+            }
+        ],
+        "static_url_path": "/flasgger_static",
+        "swagger_ui": True,
+        "specs_route": "/docs",
+    }
+    swagger_template = {
+        "info": {
+            "title": "ACSS 电商客服智能问答系统 API",
+            "description": "问题自动分类与回答生成客服系统。提供意图分类、情感分析、知识库检索、LLM 流式回答。",
+            "version": "0.1.0",
+            "contact": {"name": "ACSS Team"},
+        },
+        "host": "localhost:5000",
+        "basePath": "/api",
+        "schemes": ["http"],
+        "tags": [
+            {"name": "系统", "description": "健康检查"},
+            {"name": "对话", "description": "SSE 流式聊天"},
+        ],
+    }
+    Swagger(app, config=swagger_config, template=swagger_template)
+
+    # ─── SQLite 数据库初始化 ───
+    try:
+        from app.services.db import init_db
+
+        init_db()
+    except Exception as e:
+        logger.warning("数据库初始化失败，会话将不持久化: %s", e)
 
     from app.api import api_bp
 

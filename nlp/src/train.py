@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 
 from datasets import Dataset
-from setfit import SetFitModel, SetFitTrainer, TrainingArguments
+from setfit import SetFitModel, SetFitTrainer
 
 from preprocess import tokenize
 
@@ -36,19 +36,12 @@ def train(data_path: str = None, model_dir: str = None):
         "paraphrase-multilingual-MiniLM-L12-v2"
     )
 
-    args = TrainingArguments(
-        num_epochs=5,
-        batch_size=16,
-        max_steps=0,
-        evaluation_strategy="no",
-        save_strategy="no",
-        logging_steps=0,
-    )
-
     trainer = SetFitTrainer(
         model=model,
         train_dataset=dataset,
-        args=args,
+        num_iterations=20,
+        num_epochs=5,
+        batch_size=16,
     )
 
     print("开始训练...")

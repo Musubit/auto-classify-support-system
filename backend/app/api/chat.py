@@ -16,18 +16,54 @@ logger = logging.getLogger(__name__)
 @api_bp.route("/chat", methods=["POST"])
 def chat():
     """发送聊天消息并以 SSE 流式返回回复。
+    ---
+    tags:
+      - 对话
+    summary: 发送聊天消息（SSE 流式）
+    description: |
+      接收用户消息，编排器依次执行意图分类、情感分析、知识库检索、
+      并由 LLM 生成回答。通过 Server-Sent Events 流式推送结果。
 
-    接收 JSON 格式的用户消息，调用编排器进行意图分类和
-    回答生成，通过 Server-Sent Events 逐步推送结果。
-
-    SSE 事件序列：
-        event: intent  — 意图分类结果
-        event: token   — 逐字回答（多次）
-        event: done    — 回答完成
-
-    Returns:
-        Response: mimetype 为 text/event-stream 的流式响应。
-        校验失败时返回 JSON 错误响应。
+      **SSE 事件序列：**
+      - `event: meta` — 元信息（意图标签、情感标签、检索命中数）
+      - `event: token` — 逐字回答（多次）
+      - `event: done` — 回答完成，含完整文本
+      - `event: error` — 发生错误时
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - session_id
+            - message
+          properties:
+            session_id:
+              type: string
+              description: 会话唯一标识
+              example: "abc12345"
+            message:
+              type: string
+              description: 用户输入的消息文本
+              example: "我的快递什么时候到"
+    responses:
+      200:
+        description: SSE 事件流（text/event-stream）
+      400:
+        description: 请求体校验失败
+        schema:
+          type: object
+          properties:
+            status:
+              type: string
+              example: error
+            message:
+              type: string
+              example: 请求格式错误，请提供 session_id 和 message
+            data:
+              type: object
+              example: null
     """
     # 请求体校验
     body = request.get_json(silent=True)

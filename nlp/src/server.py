@@ -5,6 +5,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 
 from predict import IntentClassifier
+from extract import extract_entities, extract_summary
 
 app = Flask(__name__)
 CORS(app)
@@ -71,6 +72,19 @@ def parse_batch():
     clf = get_classifier()
     results = clf.predict_batch(texts)
     return jsonify({"results": results})
+
+
+@app.route("/extract", methods=["POST"])
+def extract():
+    """实体抽取"""
+    data = request.get_json()
+    if not data or "text" not in data:
+        return jsonify({"error": "missing 'text' field"}), 400
+
+    text = data["text"]
+    entities = extract_entities(text)
+    summary = extract_summary(text)
+    return jsonify({"entities": entities, "summary": summary})
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue';
+import { ref, onMounted } from 'vue';
 import { useChatStore } from '@/stores/chat';
 
 const props = defineProps({
@@ -9,15 +9,37 @@ const props = defineProps({
 const emit = defineEmits(['toggle']);
 
 const chatStore = useChatStore();
-const activeNav = ref('chat');
 
-const navItems = [
-  { id: 'chat', label: '智能客服', icon: 'chat', badge: null },
-];
+onMounted(() => {
+  chatStore.loadSessions();
+});
+
+/** 格式化时间为简短格式 */
+function formatSessionTime(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  const now = new Date();
+  const diff = now - d;
+  if (diff < 60000) return '刚刚';
+  if (diff < 3600000) return `${Math.floor(diff / 60000)} 分钟前`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)} 小时前`;
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${m}/${day}`;
+}
 
 function handleNewSession() {
   chatStore.clearSession();
-  activeNav.value = 'chat';
+}
+
+function handleSelectSession(id) {
+  if (chatStore.isStreaming) return;
+  chatStore.loadSession(id);
+}
+
+function handleDeleteSession(id, e) {
+  e.stopPropagation();
+  chatStore.deleteSession(id);
 }
 </script>
 
@@ -160,26 +182,21 @@ function handleNewSession() {
         }"
       >
         <button
-          v-for="item in navItems"
-          :key="item.id"
-          :title="item.label"
-          @click="activeNav = item.id"
           :style="{
             display: 'flex',
             alignItems: 'center',
-            gap: collapsed ? '0' : '8px',
-            padding: collapsed ? '8px' : '8px 12px',
+            gap: '8px',
+            padding: '8px 12px',
             borderRadius: '8px',
             color: '#1d1d1f',
             fontSize: '14px',
-            fontWeight: activeNav === item.id ? '600' : '500',
-            backgroundColor: activeNav === item.id ? '#e8e8ea' : 'transparent',
+            fontWeight: chatStore.currentSessionId ? '500' : '600',
+            backgroundColor: !chatStore.currentSessionId ? '#e8e8ea' : 'transparent',
             border: 'none',
             cursor: 'pointer',
             width: '100%',
             textAlign: 'left',
             whiteSpace: 'nowrap',
-            justifyContent: collapsed ? 'center' : 'flex-start',
             boxSizing: 'border-box',
           }"
         >
@@ -187,7 +204,7 @@ function handleNewSession() {
             :style="{
               display: 'flex',
               alignItems: 'center',
-              color: activeNav === item.id ? '#1d1d1f' : '#86868b',
+              color: '#86868b',
               flexShrink: 0,
             }"
           >
@@ -195,63 +212,119 @@ function handleNewSession() {
               <path d="M2 3.5A1.5 1.5 0 013.5 2h9A1.5 1.5 0 0114 3.5v7a1.5 1.5 0 01-1.5 1.5H5l-2 2V3.5z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
             </svg>
           </span>
-          <span v-if="!collapsed" :style="{ flex: 1 }">{{ item.label }}</span>
+          <span :style="{ flex: 1 }">当前对话</span>
         </button>
       </nav>
 
-      <!-- Spacer -->
-      <div :style="{ flex: 1 }" />
-
-      <!-- User Area (only when expanded) -->
+      <!-- 会话历史列表 -->
       <div
-        v-if="!collapsed"
+        v-if="!collapsed && chatStore.sessions.length"
         :style="{
-          display: 'flex',
-          alignItems: 'center',
-          padding: '8px 4px',
-          marginTop: 'auto',
-          borderRadius: '8px',
+          marginTop: '16px',
           width: '100%',
-          boxSizing: 'border-box',
+          flex: 1,
+          overflowY: 'auto',
+          minHeight: 0,
         }"
       >
+        <p
+          :style="{
+            fontSize: '11px',
+            fontWeight: '600',
+            color: '#86868b',
+            padding: '0 12px',
+            marginBottom: '6px',
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px',
+          }"
+        >
+          历史会话
+        </p>
         <div
+          v-for="session in chatStore.sessions"
+          :key="session.id"
+          class="session-row"
+          @click="handleSelectSession(session.id)"
           :style="{
             display: 'flex',
             alignItems: 'center',
-            gap: '8px',
+            justifyContent: 'space-between',
+            padding: '6px 12px',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            fontSize: '13px',
+            color: session.id === chatStore.currentSessionId ? '#1d1d1f' : '#86868b',
+            fontWeight: session.id === chatStore.currentSessionId ? '500' : '400',
+            backgroundColor: session.id === chatStore.currentSessionId ? '#e8e8ea' : 'transparent',
+            transition: 'background-color 0.12s ease',
+            width: '100%',
+            boxSizing: 'border-box',
+            border: 'none',
+            textAlign: 'left',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
           }"
         >
-          <div
+          <span
             :style="{
-              width: '28px',
-              height: '28px',
-              borderRadius: '9999px',
-              backgroundColor: '#e5e5e7',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#86868b',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              flex: 1,
+              minWidth: 0,
+            }"
+          >
+            {{ session.title || '新对话' }}
+          </span>
+          <span
+            :style="{
+              fontSize: '11px',
+              color: '#bfbfbf',
+              marginLeft: '6px',
               flexShrink: 0,
             }"
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <circle cx="8" cy="5.5" r="3" stroke="currentColor" stroke-width="1.2"/>
-              <path d="M2.5 14c0-3 2.5-5 5.5-5s5.5 2 5.5 5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
-            </svg>
-          </div>
-          <span
+            {{ formatSessionTime(session.updated_at) }}
+          </span>
+          <button
+            class="session-delete-btn"
+            @click="(e) => handleDeleteSession(session.id, e)"
             :style="{
-              fontSize: '13px',
-              color: '#86868b',
+              marginLeft: '4px',
+              width: '18px',
+              height: '18px',
+              borderRadius: '4px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#bfbfbf',
+              border: 'none',
+              background: 'none',
+              cursor: 'pointer',
+              flexShrink: 0,
+              padding: 0,
+              opacity: 0,
+              transition: 'opacity 0.12s ease',
             }"
           >
-            未登录
-          </span>
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+            </svg>
+          </button>
         </div>
       </div>
+
+      <!-- Spacer (only when no sessions) -->
+      <div v-if="!collapsed && !chatStore.sessions.length" :style="{ flex: 1 }" />
+
     </div>
   </aside>
 </template>
 <style scoped>
+.session-row:hover {
+  background-color: #e8e8ea !important;
+}
+.session-row:hover .session-delete-btn {
+  opacity: 1 !important;
+}
 </style>

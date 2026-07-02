@@ -111,16 +111,7 @@ watch(
         </transition>
       </div>
 
-      <div class="chat-area__header-actions">
-        <button class="chat-area__btn-outline">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <path d="M6 2H3a1 1 0 00-1 1v8a1 1 0 001 1h8a1 1 0 001-1V8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
-            <path d="M7 7h5M9.5 4.5L12 7l-2.5 2.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          API 服务
-        </button>
-        <button class="chat-area__btn-primary">立即登录</button>
-      </div>
+      <div class="chat-area__header-actions" />
     </header>
 
     <!-- Messages Area -->

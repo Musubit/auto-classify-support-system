@@ -32,7 +32,7 @@ function formatTime(ts) {
     }"
   >
     <div class="msg-bubble__inner">
-      <!-- 意图标签 + 情感标签（仅 bot 消息） -->
+      <!-- 意图标签 + 情感标签 + 实体标签（仅 bot 消息） -->
       <div v-if="message.role === 'assistant'" class="msg-bubble__tags">
         <span
           v-if="message.intent"
@@ -50,6 +50,12 @@ function formatTime(ts) {
           }"
         >
           情感：{{ getSentimentLabel(message.sentiment.label) }}
+        </span>
+        <span
+          v-if="message.entities && message.entities.summary"
+          class="msg-bubble__tag msg-bubble__tag--entity"
+        >
+          {{ message.entities.summary }}
         </span>
       </div>
 
@@ -133,6 +139,11 @@ function formatTime(ts) {
 .msg-bubble__tag--neutral {
   background-color: #edf2f7;
   color: #718096;
+}
+
+.msg-bubble__tag--entity {
+  background-color: #fff8e1;
+  color: #b45309;
 }
 
 .msg-bubble__text {

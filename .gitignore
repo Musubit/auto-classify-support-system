@@ -41,5 +41,8 @@ nlp/models/
 nlp/__pycache__/
 nlp/**/*.pyc
 
+# SQLite 数据库
+backend/data/
+
 # AGENT
 .claude/

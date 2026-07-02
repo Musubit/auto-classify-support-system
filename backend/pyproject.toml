@@ -6,18 +6,34 @@ requires-python = ">=3.10,<4.0"
 dependencies = [
     "flask>=3.1.1,<4.0",
     "flask-cors>=5.0.0",
+    "flasgger>=0.9.7",
     "openai>=1.55.0",
     "elasticsearch>=8.15.0,<9.0",
-    "redis>=5.2.0",
+
     "pydantic>=2.9.0",
     "python-dotenv>=1.0.0",
     "requests>=2.34.2",
+    "numpy>=1.26.0",
+    "sentence-transformers>=3.3.0",
+    "transformers>=4.47.0,<5.0.0",
+    "torch>=2.9.1",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.3.0",
     "pytest-asyncio>=0.24.0",
+]
+
+# ─── PyTorch GPU (CUDA 13.0) 索引配置 ───
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cu130", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
 ]
 
 [tool.ruff]

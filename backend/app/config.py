@@ -4,7 +4,12 @@ import os
 
 from dotenv import load_dotenv
 
-load_dotenv()
+# 优先加载 backend/.env，回退到项目根 .env
+from pathlib import Path
+_dotenv_path = Path(__file__).resolve().parent.parent / ".env"
+if not _dotenv_path.exists():
+    _dotenv_path = Path(__file__).resolve().parent.parent.parent / ".env"
+load_dotenv(dotenv_path=_dotenv_path)
 
 
 class Config:
@@ -26,8 +31,10 @@ class Config:
     ES_HOST: str = os.getenv("ES_HOST", "http://localhost:9200")
     ES_INDEX: str = os.getenv("ES_INDEX", "faq")
 
-    # ─── Redis ───
-    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    # ─── LLM 后端选择 ───
+    LLM_BACKEND: str = os.getenv("LLM_BACKEND", "deepseek")  # "deepseek" | "ollama"
+    OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434/v1")
+    OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
 
     # ─── NLP ───
     NLP_SERVER_URL: str = os.getenv("NLP_SERVER_URL", "http://localhost:5005")

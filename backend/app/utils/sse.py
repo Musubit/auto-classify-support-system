@@ -97,6 +97,19 @@ def generate_done_event(message_id: str, full_answer: str, source: str = "templa
     )
 
 
+def generate_entity_event(entities: dict, summary: str) -> str:
+    """生成实体抽取结果的 SSE 事件。
+
+    Args:
+        entities: 原始实体结果 dict。
+        summary: 可读摘要字符串。
+
+    Returns:
+        str: SSE 事件字符串。
+    """
+    return format_sse_event("entity", {"entities": entities, "summary": summary})
+
+
 def generate_error_event(message: str) -> str:
     """生成错误的 SSE 事件。
 

@@ -1,12 +1,12 @@
 /**
  * 聊天状态管理 — Pinia Store。
  *
- * 管理消息列表、会话状态和 SSE 流式接收。
+ * 管理消息列表、会话列表、SSE 流式接收和 SQLite 持久化。
  * 遵循 coding-standards.md §2.4：Composition API 风格。
  */
 import { ref, computed } from 'vue';
 import { defineStore } from 'pinia';
-import { streamChat } from '@/api';
+import { streamChat, listSessions, getSession, deleteSessionApi } from '@/api';
 
 /** 生成简易唯一 ID。 */
 function uid() {
@@ -16,17 +16,13 @@ function uid() {
 export const useChatStore = defineStore('chat', () => {
   // ─── State ───
 
-  /** @type {import('vue').Ref<Array<{id: string, role: string, text: string, timestamp: number, intent?: object, isStreaming?: boolean}>>} */
   const messages = ref([]);
-
-  /** @type {import('vue').Ref<string|null>} */
   const currentSessionId = ref(null);
-
-  /** @type {import('vue').Ref<boolean>} */
   const isStreaming = ref(false);
-
-  /** @type {import('vue').Ref<string|null>} */
   const error = ref(null);
+
+  /** 会话历史列表 */
+  const sessions = ref([]);
 
   // ─── Getters ───
 
@@ -41,10 +37,51 @@ export const useChatStore = defineStore('chat', () => {
 
   // ─── Actions ───
 
-  /** 初始化会话 ID（仅在前端生成临时 ID）。 */
+  /** 初始化会话 ID。 */
   function initSession() {
     if (!currentSessionId.value) {
       currentSessionId.value = `session_${Date.now()}`;
+    }
+  }
+
+  /** 从后端加载会话列表。 */
+  async function loadSessions() {
+    try {
+      sessions.value = await listSessions();
+    } catch {
+      // 后端不可用时静默失败
+    }
+  }
+
+  /** 加载指定会话的历史消息。 */
+  async function loadSession(sessionId) {
+    try {
+      const data = await getSession(sessionId);
+      currentSessionId.value = sessionId;
+      messages.value = (data.messages || []).map((m) => ({
+        id: m.id,
+        role: m.role,
+        text: m.text,
+        timestamp: new Date(m.created_at).getTime(),
+        intent: m.intent_label ? { intent: m.intent_label, confidence: m.intent_confidence } : null,
+        sentiment: m.sentiment_label ? { label: m.sentiment_label, score: m.sentiment_score } : null,
+        isStreaming: false,
+      }));
+    } catch {
+      error.value = '加载会话失败';
+    }
+  }
+
+  /** 删除会话。 */
+  async function deleteSession(sessionId) {
+    try {
+      await deleteSessionApi(sessionId);
+      sessions.value = sessions.value.filter((s) => s.id !== sessionId);
+      if (currentSessionId.value === sessionId) {
+        clearSession();
+      }
+    } catch {
+      error.value = '删除会话失败';
     }
   }
 
@@ -58,8 +95,6 @@ export const useChatStore = defineStore('chat', () => {
 
   /**
    * 发送用户消息并接收 SSE 流式回复。
-   *
-   * @param {string} text - 用户输入的消息文本。
    */
   async function sendMessage(text) {
     if (!text.trim() || isStreaming.value) return;
@@ -84,6 +119,7 @@ export const useChatStore = defineStore('chat', () => {
       timestamp: Date.now(),
       intent: null,
       sentiment: null,
+      entities: null,
       isStreaming: true,
     };
     messages.value.push(botMsg);
@@ -91,47 +127,67 @@ export const useChatStore = defineStore('chat', () => {
     isStreaming.value = true;
 
     // 3. 发起 SSE 流式请求
+    //    所有回调必须通过 messages.value 访问响应式代理
     await streamChat(currentSessionId.value, text.trim(), {
       onIntent(data) {
-        if (botMsg.intent === null) {
-          botMsg.intent = data;
+        const msg = messages.value[messages.value.length - 1];
+        if (msg && msg.intent === null) {
+          msg.intent = data;
         }
       },
 
       onSentiment(data) {
-        if (botMsg.sentiment === null) {
-          botMsg.sentiment = data;
+        const msg = messages.value[messages.value.length - 1];
+        if (msg && msg.sentiment === null) {
+          msg.sentiment = data;
+        }
+      },
+
+      onEntity(data) {
+        const msg = messages.value[messages.value.length - 1];
+        if (msg && msg.entities === null) {
+          msg.entities = data;
         }
       },
 
       onToken(token) {
-        botMsg.text += token;
+        const msg = messages.value[messages.value.length - 1];
+        if (msg) {
+          msg.text += token;
+        }
       },
 
       onDone(data) {
-        botMsg.isStreaming = false;
-        isStreaming.value = false;
-        // 若后端返回完整文本但前端未逐字收到，做兜底
-        if (!botMsg.text && data.full_answer) {
-          botMsg.text = data.full_answer;
+        const msg = messages.value[messages.value.length - 1];
+        if (msg) {
+          msg.isStreaming = false;
+          if (!msg.text && data.full_answer) {
+            msg.text = data.full_answer;
+          }
         }
+        isStreaming.value = false;
+        // 刷新会话列表（新会话会出现在列表中）
+        loadSessions();
       },
 
       onError(errMsg) {
-        botMsg.isStreaming = false;
+        const msg = messages.value[messages.value.length - 1];
+        if (msg) {
+          msg.isStreaming = false;
+          if (!msg.text) {
+            msg.text = '抱歉，服务暂时不可用，请稍后重试。';
+          }
+        }
         isStreaming.value = false;
         error.value = errMsg;
-        // 若 bot 消息仍为空，追加错误提示
-        if (!botMsg.text) {
-          botMsg.text = '抱歉，服务暂时不可用，请稍后重试。';
-        }
       },
     });
 
     // 兜底：确保 streaming 状态被清除
     isStreaming.value = false;
-    if (botMsg.isStreaming) {
-      botMsg.isStreaming = false;
+    const msg = messages.value[messages.value.length - 1];
+    if (msg && msg.isStreaming) {
+      msg.isStreaming = false;
     }
   }
 
@@ -141,11 +197,15 @@ export const useChatStore = defineStore('chat', () => {
     currentSessionId,
     isStreaming,
     error,
+    sessions,
     // getters
     lastBotMessage,
     // actions
     initSession,
     clearSession,
     sendMessage,
+    loadSessions,
+    loadSession,
+    deleteSession,
   };
 });
