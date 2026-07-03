@@ -61,7 +61,10 @@ function formatTime(ts) {
 
       <!-- 消息文本 -->
       <div class="msg-bubble__text">
-        {{ message.text }}
+        <span v-if="message.isStreaming && !message.text" class="msg-bubble__thinking">
+          模型思考中<span class="msg-bubble__thinking-dots">...</span>
+        </span>
+        <template v-else>{{ message.text }}</template>
         <span v-if="message.isStreaming" class="msg-bubble__cursor">|</span>
       </div>
 
@@ -151,6 +154,21 @@ function formatTime(ts) {
   line-height: 1.7;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.msg-bubble__thinking {
+  color: var(--color-text-tertiary);
+  font-style: italic;
+}
+
+.msg-bubble__thinking-dots {
+  animation: dotPulse 1.4s ease-in-out infinite;
+}
+
+@keyframes dotPulse {
+  0%, 20% { opacity: 0; }
+  50% { opacity: 1; }
+  80%, 100% { opacity: 0; }
 }
 
 .msg-bubble__cursor {
