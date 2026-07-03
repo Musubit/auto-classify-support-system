@@ -35,7 +35,6 @@ dist/
 # 日志
 *.log
 
-docs/
 # NLP module
 nlp/models/
 nlp/__pycache__/
