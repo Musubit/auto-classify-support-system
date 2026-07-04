@@ -32,6 +32,7 @@ class PipelineContext:
 
     session_id: str
     message: str
+    history: list[dict] | None = None
 
     # 各 Stage 产出
     intent: str = ""
@@ -115,7 +116,7 @@ class GenerateStage(Stage):
     def execute(self, ctx: PipelineContext) -> Generator[str, None, None]:
         emit = SSEEmitter()
         for token in generate_stream(
-            ctx.message, ctx.intent, context=ctx.faq_context
+            ctx.message, ctx.intent, context=ctx.faq_context, history=ctx.history
         ):
             ctx.full_answer += token
             yield emit.token(token)

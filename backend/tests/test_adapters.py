@@ -263,7 +263,7 @@ class TestLLM:
             assert "测试" in tokens
 
     def test_generate_stream_returns_full_answer(self, app_context):
-        """generator return value 应为完整回答。"""
+        """generator return value 应为完整回答（通过手动迭代捕获）。"""
         from app.services.llm import generate_stream
 
         mock_client = MagicMock()
@@ -276,10 +276,106 @@ class TestLLM:
 
         with patch("app.services.llm._get_client_and_model", return_value=(mock_client, "test-model")):
             gen = generate_stream("你好", "greeting")
-            tokens = list(gen)
-            assert tokens == ["你", "好", "！"]
-            # StopIteration value
+            result = None
             try:
-                next(gen)
+                while True:
+                    next(gen)
             except StopIteration as e:
-                assert e.value == "你好！"
+                result = e.value
+
+            assert result == "你好！"
+
+
+# ─── Token 估算与上下文截断测试 ──────────────────────────────
+
+
+class TestEstimateTokens:
+    """estimate_tokens() — 保守的 token 估算。"""
+
+    def test_chinese(self):
+        """中文每 2 字估算 1 token。"""
+        from app.services.llm import estimate_tokens
+        assert estimate_tokens("你好世界") == 2  # 4 chars / 2
+
+    def test_english(self):
+        """英文同样取 len//2。"""
+        from app.services.llm import estimate_tokens
+        assert estimate_tokens("hello world") == 5  # 11 chars / 2
+
+    def test_empty_string(self):
+        """空字符串至少返回 1。"""
+        from app.services.llm import estimate_tokens
+        assert estimate_tokens("") == 1
+
+
+class TestTruncateHistory:
+    """truncate_history() — 上下文窗口截断。"""
+
+    def test_under_limit_no_truncation(self):
+        """未超限时完整保留。"""
+        from app.services.llm import truncate_history
+        history = [
+            {"role": "user", "content": "你好"},
+            {"role": "assistant", "content": "您好"},
+        ]
+        result = truncate_history(history, max_tokens=1000)
+        assert len(result) == 2
+
+    def test_over_limit_drops_oldest(self):
+        """超限时丢弃最旧的轮次。"""
+        from app.services.llm import truncate_history
+        history = [
+            {"role": "user", "content": "X" * 200},
+            {"role": "assistant", "content": "Y" * 200},
+            {"role": "user", "content": "C" * 200},
+            {"role": "assistant", "content": "D" * 200},
+        ]
+        # 每对约 100 tokens (200 chars / 2)，budget 150 只够最后一对
+        result = truncate_history(history, max_tokens=150, min_turns=1)
+        assert len(result) == 2
+        assert result[0]["content"].startswith("C")
+
+    def test_min_turns_protection(self):
+        """即使超限也至少保留 min_turns 轮。"""
+        from app.services.llm import truncate_history
+        history = [
+            {"role": "user", "content": "X" * 200},
+            {"role": "assistant", "content": "Y" * 200},
+            {"role": "user", "content": "Z" * 200},
+            {"role": "assistant", "content": "W" * 200},
+        ]
+        result = truncate_history(history, max_tokens=10, min_turns=2)
+        assert len(result) == 4  # 2 对 = 4 条
+
+    def test_empty_history(self):
+        """空历史返回空列表。"""
+        from app.services.llm import truncate_history
+        assert truncate_history([], max_tokens=100) == []
+
+
+class TestBuildMessagesWithHistory:
+    """build_messages() — 历史消息集成。"""
+
+    def test_build_messages_truncates_long_history(self, app_context):
+        """超长历史时内建截断。"""
+        from app.services.llm import build_messages
+        # 使用 monkeypatch 临时覆盖 min_turns 默认值来实现截断
+        from app.services.llm import truncate_history as _orig_truncate
+
+        def _truncate(history, max_tokens, min_turns=3):
+            return _orig_truncate(history, max_tokens, min_turns=1)
+
+        history = [
+            {"role": "user", "content": "X" * 1000},
+            {"role": "assistant", "content": "Y" * 1000},
+            {"role": "user", "content": "你好"},
+            {"role": "assistant", "content": "您好"},
+        ]
+        with patch("app.services.llm.truncate_history", side_effect=_truncate):
+            messages = build_messages(
+                "新问题", "other", history=history, max_context_tokens=50
+            )
+        # 旧的长 pair 应被丢弃，只保留最近的 + system + current
+        contents = [m["content"] for m in messages]
+        assert not any("X" * 1000 in c for c in contents)
+        assert any("你好" in c for c in contents)

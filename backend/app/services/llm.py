@@ -28,19 +28,100 @@ INTENT_SYSTEM_PROMPTS: dict[str, str] = {
 }
 
 
+# ─── Token 估算与上下文截断 ───────────────────────────────
+
+
+def estimate_tokens(text: str) -> int:
+    """保守估算混合中英文文本的 token 数。
+
+    中文约 1.5 字/token，英文约 4 字/token，取 len//2 作为安全上界。
+    非空字符串至少返回 1。
+
+    Args:
+        text: 待估算文本。
+
+    Returns:
+        int: 估算 token 数。
+    """
+    return max(1, len(text) // 2)
+
+
+def truncate_history(
+    history: list[dict],
+    max_tokens: int,
+    min_turns: int = 3,
+) -> list[dict]:
+    """截断对话历史以适应上下文窗口。
+
+    将历史按 (user, assistant) 成对分组，从最新轮次往前累加 token 数。
+    超出 max_tokens 时丢弃最旧的轮次，至少保留 min_turns 轮。
+
+    Args:
+        history: 对话历史 [{role, content}, ...]，按时间正序。
+        max_tokens: 历史部分允许的最大估算 token 数。
+        min_turns: 最少保留的对话轮次数。
+
+    Returns:
+        list[dict]: 截断后的历史消息列表。
+    """
+    if not history:
+        return []
+
+    # 按 (user, assistant) 成对分组
+    pairs: list[list[dict]] = []
+    i = 0
+    while i < len(history):
+        if i + 1 < len(history) and history[i]["role"] == "user":
+            pairs.append([history[i], history[i + 1]])
+            i += 2
+        else:
+            pairs.append([history[i]])
+            i += 1
+
+    # 从最新轮次往前累加
+    kept_pairs = []
+    tokens_used = 0
+    for pair in reversed(pairs):
+        pair_tokens = sum(estimate_tokens(m["content"]) for m in pair)
+        if tokens_used + pair_tokens > max_tokens and len(kept_pairs) >= min_turns:
+            break
+        kept_pairs.insert(0, pair)
+        tokens_used += pair_tokens
+
+    # 展开回消息列表
+    result = []
+    for pair in kept_pairs:
+        result.extend(pair)
+
+    original_count = len(history)
+    if len(result) < original_count:
+        logger.warning(
+            "历史消息截断: %d条 → %d条 (保留%d轮对话, 估算token=%d/%d)",
+            original_count, len(result), len(kept_pairs),
+            tokens_used, max_tokens,
+        )
+
+    return result
+
+
+# ─── Prompt 构建 ───────────────────────────────────────────
+
+
 def build_messages(
     user_message: str,
     intent: str,
     context: Optional[str] = None,
     history: Optional[list[dict]] = None,
+    max_context_tokens: int = 28000,
 ) -> list[dict]:
-    """构建 LLM 调用的消息列表。
+    """构建 LLM 调用的消息列表，含上下文窗口截断。
 
     Args:
         user_message: 用户当前输入文本。
         intent: 意图标签。
-        context: 可选的检索上下文（FAQ 匹配结果，后续 RAG 阶段接入）。
+        context: 可选的检索上下文（FAQ 匹配结果）。
         history: 可选的对话历史 [{role, content}, ...]。
+        max_context_tokens: 上下文窗口 token 预算上限。
 
     Returns:
         list[dict]: 符合 OpenAI Chat API 的消息列表。
@@ -53,10 +134,17 @@ def build_messages(
             "\n\n以下是可供参考的知识库内容，请据此回答：\n" + context
         )
 
+    # 固定 token 消耗：system prompt + 当前用户消息
+    fixed_tokens = estimate_tokens(system_prompt) + estimate_tokens(user_message)
+
     messages: list[dict] = [{"role": "system", "content": system_prompt}]
 
     if history:
-        messages.extend(history)
+        # 用剩余 budget 容纳历史，超出部分截断
+        history_budget = max_context_tokens - fixed_tokens
+        if history_budget > 0:
+            truncated = truncate_history(history, history_budget)
+            messages.extend(truncated)
 
     messages.append({"role": "user", "content": user_message})
     return messages
@@ -84,10 +172,14 @@ def generate_stream(
     """
     backend = current_app.config.get("LLM_BACKEND", "deepseek")
     client, model = _get_client_and_model(backend)
-    messages = build_messages(user_message, intent, context, history)
+    max_ctx = int(current_app.config.get("MAX_CONTEXT_TOKENS", "28000"))
+    messages = build_messages(
+        user_message, intent, context, history,
+        max_context_tokens=max_ctx,
+    )
 
-    logger.info("LLM 请求: backend=%s model=%s intent=%s len=%d",
-                backend, model, intent, len(user_message))
+    logger.info("LLM 请求: backend=%s model=%s intent=%s msgs=%d",
+                backend, model, intent, len(messages))
 
     try:
         stream = client.chat.completions.create(

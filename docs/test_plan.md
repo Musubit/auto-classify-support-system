@@ -1,111 +1,66 @@
 # 测试计划
 
-> **版本**: v0.1  
-> **日期**: 2026-06-30  
-> **状态**: 设计与实现对齐中  
-> **目标**: 验证项目骨架、基础服务、联调流程和后续接口扩展
+> **版本**: v1.0
+> **日期**: 2026-07-04
+> **状态**: 与代码库对齐（157 用例，全部通过）
+> **目标**: 验证后端服务层、API 层、Pipeline 编排、适配器层的完整测试覆盖
 
 ## 1. 测试目标
 
-本项目测试优先覆盖以下内容：
+本项目测试覆盖以下内容：
 
-- 应用是否能启动
-- 基础接口是否可访问
-- 前端页面是否可渲染
-- 中间件是否可联通
-- 未来扩展接口是否有明确测试边界
+- 后端服务层逻辑（Pipeline、Retriever、NLPClient、Sentiment、LLM、DB）
+- API 层（Chat SSE 流式、Session CRUD）
+- 适配器层（NLPClient HTTP、情感分析、LLM 双后端、Token 估算）
+- 失败与兜底路径（连接错误、超时、模型不可用、API Key 缺失）
+- 多轮对话上下文管理（历史传递、截断、Token 估算）
 
 ## 2. 测试分层
 
-| 层级 | 工具 | 关注点 |
-|------|------|--------|
-| 单元测试 | pytest | 配置、工具函数、服务层单独逻辑 |
-| 集成测试 | pytest + docker | Flask API → NLP/ES/SQLite 联动 |
-| 前端测试 | 组件测试 / 手动验证 | 页面渲染、交互、样式 |
-| 冒烟测试 | curl / 浏览器 / Docker Compose | 最小启动链路是否正常 |
+| 层级 | 工具 | 关注点 | 测试文件 | 用例数 |
+|------|------|--------|----------|--------|
+| 单元测试 | pytest | 配置、工具函数、服务层单独逻辑 | `test_adapters.py`, `test_retriever.py` | 49 |
+| 集成测试 | pytest + mock | Pipeline 编排、DB 操作、SSE 流式、NLP 客户端 | `test_pipeline.py`, `test_db.py`, `test_chat.py` | 74 |
+| NLP 测试 | pytest | 实体抽取（jieba + 正则） | `nlp/tests/test_extract.py` | 37 |
+| 冒烟测试 | curl / 浏览器 / Docker Compose | 最小启动链路是否正常 | 手动 | — |
 
-## 3. 当前可执行测试
+## 3. 当前测试覆盖
 
-### 3.1 后端健康检查
+### 3.1 backend 测试（136 用例）
 
-**目标**: 验证 Flask 应用可启动，统一响应工具正常工作。
+| 测试文件 | 用例数 | 覆盖范围 |
+|----------|--------|----------|
+| `test_pipeline.py` | 23 | PipelineContext、Stage 接口、IntentStage、SentimentStage、EntityStage、RetrieveStage、GenerateStage（含 history 传递）、Pipeline runner、默认工厂 |
+| `test_db.py` | 27 | init_db、ensure_session、save_message、get_session_messages、delete_session、get_all_sessions |
+| `test_chat.py` | 24 | SSE 格式校验、Chat API 完整流式响应、done/error 事件 |
+| `test_adapters.py` | 31 | NLPClient（classify + extract 成功/失败/fallback）、Sentiment（三分类/阈值/不可用）、LLM（build_messages/history/truncate/stream/双后端）、Token 估算、上下文截断 |
+| `test_retriever.py` | 21 | Retriever 初始化、ES fallback、内存向量检索、关键词匹配、format_context（部分用例需 ES 运行，3 skipped） |
+| `test_analytics.py` | 11 | 数据分析 API 聚合查询（空库/有数据/结构校验）、get_analytics() 函数、GET /api/analytics 端点 |
 
-**步骤**:
+### 3.2 nlp 测试（42 用例）
 
-1. 启动后端：`uv run python run.py`
-2. 访问：`GET /api/health`
-3. 检查响应是否符合统一格式
+| 测试文件 | 用例数 | 覆盖范围 |
+|----------|--------|----------|
+| `nlp/tests/test_extract.py` | 37 | 订单号、手机号、金额、日期、运单号、快递公司、商品名 7 类实体，边界情况 |
 
-**预期**:
+### 3.3 全部通过
 
-```json
-{
-  "status": "success",
-  "message": "服务运行中",
-  "data": {
-    "service": "auto-classify-support-system",
-    "version": "0.1.0"
-  }
-}
+```
+backend: 133 passed, 3 skipped
+nlp:     42 passed
+───────────────
+total:   175 passed, 3 skipped
 ```
 
-### 3.2 前端首屏渲染
+## 4. 手动验证清单
 
-**目标**: 验证 Vue 页面可打开，Sidebar 和 ChatArea 可正常显示。
-
-**检查点**:
-
-- 页面无白屏
-- 左侧栏可折叠
-- 模型选择器可展开
-- 推荐问题卡片可点击
-- 输入框与发送按钮显示正常
-
-### 3.3 Docker Compose 冒烟
-
-**目标**: 验证基础中间件和服务编排能启动。
-
-**检查点**:
-
-- Elasticsearch 容器可启动
-- Ollama 容器可启动（可选）
-- NLP 服务可启动
-- Backend 容器可启动
-- Frontend 容器可启动
-- `docker compose ps` 状态正常（5 个容器：ES + Ollama + NLP + Backend + Frontend）
-
-## 4. 计划中测试
-
-以下测试对应后续尚未完全实现的接口和能力。
-
-### 4.1 API 层
-
-| 用例 | 目标 |
-|------|------|
-| `POST /api/chat` | SSE 流式返回正确、事件格式稳定（6 种事件类型） |
-| `GET /api/sessions` | 会话列表返回正确（含 title、message_count、updated_at） |
-| `GET /api/sessions/<id>` | 会话详情含完整消息历史 |
-| `DELETE /api/sessions/<id>` | 删除会话后级联删除关联消息 |
-
-### 4.2 业务层
-
-| 用例 | 目标 |
-|------|------|
-| 意图分类 | 能识别退货、物流、商品咨询等高频意图 |
-| 实体抽取 | 能抽出订单号、商品名、地址等关键字段 |
-| FAQ 检索 | 同义表达也能命中相关 FAQ |
-| 情感分析 | 投诉、抱怨类消息能识别为负向 |
-| 回答生成 | 检索结果能被组织成可读回答 |
-
-### 4.3 失败与兜底
-
-| 场景 | 预期行为 |
-|------|----------|
-| ES 不可用 | 自动降级为内存向量检索 → 关键词匹配 |
-| NLP 服务不可用 | 意图 fallback 到 "other"；实体抽取静默跳过 |
-| LLM API Key 未配置 | 返回明确错误 SSE 事件，不崩溃 |
-| LLM 超时 | 返回兜底回复或保守提示 |
-| SQLite 不可写 | 应用仍可启动，聊天请求返回错误 |
+- [x] `GET /api/health` 返回 success
+- [x] 前端页面无控制台报错
+- [x] `docker compose up -d` 后服务状态正常
+- [x] `.env` 配置能正确被后端读取
+- [x] 统一响应格式在前后端一致
+- [x] 多轮对话历史正确传递（LLM 能感知之前对话）
+- [x] 上下文超限时自动截断最旧轮次
 
 ## 5. 验收标准
 
@@ -114,13 +69,7 @@
 1. 前端页面可打开并正常显示首屏。
 2. 后端 `/api/health` 可返回统一 JSON。
 3. Docker Compose 能拉起 ES、Ollama、NLP、Backend、Frontend。
-4. 未来实现 `/api/chat` 后，应能完整走通一次 SSE 聊天流程。
-5. 所有新增接口都应配套最少一个测试用例或冒烟验证步骤。
-
-## 6. 手动验证清单
-
-- [ ] `GET /api/health` 返回 success
-- [ ] 前端页面无控制台报错
-- [ ] `docker compose up -d` 后服务状态正常
-- [ ] `.env` 配置能正确被后端读取
-- [ ] 统一响应格式在前后端一致
+4. `/api/chat` 能完整走通一次 SSE 聊天流程（intent → sentiment → entity? → token×N → done）。
+5. 多轮对话中 LLM 能感知历史上下文。
+6. 所有 pytest 测试通过（`uv run pytest` backend + nlp）。
+7. 所有新增接口都配套最少一个测试用例或冒烟验证步骤。

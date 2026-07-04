@@ -32,6 +32,7 @@ class TestPipelineContext:
         ctx = PipelineContext(session_id="s1", message="你好")
         assert ctx.session_id == "s1"
         assert ctx.message == "你好"
+        assert ctx.history is None
         assert ctx.intent == ""
         assert ctx.confidence == 0.0
         assert ctx.sentiment == {}
@@ -310,6 +311,29 @@ class TestGenerateStage:
         call_args = mock_gen.call_args
         assert call_args[0][0] == ctx.message
         assert call_args[1]["context"] == ctx.faq_context
+
+    def test_execute_passes_history_to_llm(self, ctx):
+        """generate_stream 应收到 history kwarg。"""
+        ctx.history = [
+            {"role": "user", "content": "之前的问题"},
+            {"role": "assistant", "content": "之前的回答"},
+        ]
+        with patch(
+            "app.services.pipeline.generate_stream", return_value=iter(["OK"])
+        ) as mock_gen:
+            list(GenerateStage().execute(ctx))
+
+        mock_gen.assert_called_once()
+        assert mock_gen.call_args[1]["history"] == ctx.history
+
+    def test_execute_history_none_by_default(self, ctx):
+        """无历史时 history 应为 None。"""
+        with patch(
+            "app.services.pipeline.generate_stream", return_value=iter(["OK"])
+        ) as mock_gen:
+            list(GenerateStage().execute(ctx))
+
+        assert mock_gen.call_args[1]["history"] is None
 
 
 # ─── Pipeline runner 测试 ──────────────────────────────────

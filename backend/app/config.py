@@ -39,6 +39,9 @@ class Config:
     # ─── NLP ───
     NLP_SERVER_URL: str = os.getenv("NLP_SERVER_URL", "http://localhost:5005")
 
+    # ─── LLM 上下文窗口 ───
+    MAX_CONTEXT_TOKENS: int = int(os.getenv("MAX_CONTEXT_TOKENS", "28000"))
+
     # ─── 缓存策略（单位: 秒） ───
     SESSION_TTL: int = 1800  # 会话消息缓存 30 分钟
     FAQ_CACHE_TTL: int = 600  # FAQ 缓存 10 分钟

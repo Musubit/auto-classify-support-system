@@ -10,9 +10,14 @@ from typing import Generator
 
 from flask import current_app
 
-from app.services.db import ensure_session, save_message
+from app.services.db import ensure_session, get_session_messages, save_message
 from app.services.pipeline import PipelineContext, create_default_pipeline
 from app.utils.sse import SSEEmitter
+
+
+def _db_rows_to_history(rows: list[dict]) -> list[dict]:
+    """将数据库消息行转换为 LLM 对话历史格式 [{role, content}, ...]."""
+    return [{"role": r["role"], "content": r["text"]} for r in rows]
 
 
 def orchestrate(session_id: str, message: str) -> Generator[str, None, None]:
@@ -41,6 +46,11 @@ def orchestrate(session_id: str, message: str) -> Generator[str, None, None]:
     try:
         title = message[:20].replace("\n", " ").strip()
         ensure_session(session_id, title=title)
+
+        # 加载历史对话（在保存当前消息之前，避免当前消息被包含）
+        db_rows = get_session_messages(session_id)
+        history = _db_rows_to_history(db_rows) if db_rows else None
+
         save_message(user_msg_id, session_id, "user", message)
     except Exception:
         logger.exception("会话 %s 初始化失败", session_id)
@@ -49,7 +59,7 @@ def orchestrate(session_id: str, message: str) -> Generator[str, None, None]:
         return
 
     # ─── 执行分析 Pipeline ───
-    ctx = PipelineContext(session_id=session_id, message=message)
+    ctx = PipelineContext(session_id=session_id, message=message, history=history)
     pipeline = create_default_pipeline()
 
     try:

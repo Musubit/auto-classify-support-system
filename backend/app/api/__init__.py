@@ -48,5 +48,6 @@ def health():
 
 
 # 导入子模块以触发路由注册
-import app.api.chat     # noqa: F401, E402 — 注册 /api/chat 路由
-import app.api.session  # noqa: F401, E402 — 注册 /api/sessions 路由
+import app.api.analytics  # noqa: F401, E402 — 注册 /api/analytics 路由
+import app.api.chat       # noqa: F401, E402 — 注册 /api/chat 路由
+import app.api.session    # noqa: F401, E402 — 注册 /api/sessions 路由

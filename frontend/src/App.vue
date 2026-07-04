@@ -1,7 +1,6 @@
 <script setup>
 import { ref } from 'vue';
 import Sidebar from './components/Sidebar.vue';
-import ChatArea from './components/ChatArea.vue';
 
 const sidebarCollapsed = ref(false);
 
@@ -13,7 +12,7 @@ function toggleSidebar() {
 <template>
   <div class="app-layout" :class="{ 'app-layout--collapsed': sidebarCollapsed }">
     <Sidebar :collapsed="sidebarCollapsed" @toggle="toggleSidebar" />
-    <ChatArea />
+    <router-view />
   </div>
 </template>
 

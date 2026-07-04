@@ -86,6 +86,23 @@ def create_app(config_class: type = Config) -> Flask:
 
     app.register_blueprint(api_bp, url_prefix="/api")
 
+    # ─── SPA fallback: 非 API 路由返回 index.html ───
+    import os as _os
+
+    @app.route("/", defaults={"path": ""})
+    @app.route("/<path:path>")
+    def serve_spa(path: str):
+        """SPA catch-all：非 /api 路由返回前端 index.html。"""
+        from flask import send_from_directory
+
+        static_dir = _os.path.join(_os.path.dirname(_os.path.dirname(__file__)), "static")
+        # 如果是静态资源（JS/CSS/图片），直接返回文件
+        if path and "." in path:
+            full = _os.path.join(static_dir, path)
+            if _os.path.isfile(full):
+                return send_from_directory(static_dir, path)
+        return send_from_directory(static_dir, "index.html")
+
     # 异步初始化检索服务（不阻塞启动）
     try:
         from app.services.retriever import init_retriever

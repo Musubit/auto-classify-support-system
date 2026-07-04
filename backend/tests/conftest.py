@@ -47,6 +47,7 @@ def app_context():
         "NLP_SERVER_URL": "http://localhost:5005",
         "ES_HOST": "http://localhost:9200",
         "ES_INDEX": "faq",
+        "MAX_CONTEXT_TOKENS": "28000",
     })
 
     # 设置环境变量让 HF 使用镜像（加速首次模型下载）

@@ -1,7 +1,10 @@
 <script setup>
 import { ref, watch, nextTick, onMounted, onUnmounted } from 'vue';
+import { useRouter } from 'vue-router';
 import { useChatStore } from '@/stores/chat';
 import MessageBubble from './MessageBubble.vue';
+
+const router = useRouter();
 
 const selectedModel = ref('DeepSeek-V4-Flash');
 const inputText = ref('');
@@ -111,7 +114,19 @@ watch(
         </transition>
       </div>
 
-      <div class="chat-area__header-actions" />
+      <div class="chat-area__header-actions">
+        <button
+          class="chat-area__analytics-btn"
+          title="数据看板"
+          @click="router.push('/plan')"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="12" width="4" height="9" rx="1" />
+            <rect x="10" y="7" width="4" height="14" rx="1" />
+            <rect x="17" y="3" width="4" height="18" rx="1" />
+          </svg>
+        </button>
+      </div>
     </header>
 
     <!-- Messages Area -->
@@ -283,6 +298,25 @@ watch(
   display: flex;
   align-items: center;
   gap: var(--space-sm);
+}
+
+.chat-area__analytics-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.chat-area__analytics-btn:hover {
+  background-color: var(--color-card);
+  color: var(--color-accent-blue);
 }
 
 .chat-area__btn-outline {

@@ -156,3 +156,14 @@ export async function getSession(sessionId) {
 export async function deleteSessionApi(sessionId) {
   await http.delete(`/sessions/${sessionId}`);
 }
+
+// ─── Analytics API ───
+
+/**
+ * 获取数据看板聚合统计数据。
+ * @returns {Promise<object>}
+ */
+export async function fetchAnalytics() {
+  const { data } = await http.get('/analytics');
+  return data.data;
+}

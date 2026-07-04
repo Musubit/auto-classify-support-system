@@ -200,6 +200,80 @@ def get_session(session_id: str) -> Optional[dict]:
         conn.close()
 
 
+def get_analytics() -> dict:
+    """获取数据分析聚合数据。
+
+    在一次连接内执行所有聚合查询，返回结构化 dict，
+    供 GET /api/analytics 使用。
+
+    Returns:
+        dict: 含 total_sessions, total_messages, average_session_depth,
+              today_active_sessions, intent_distribution, sentiment_distribution,
+              daily_trend, hourly_activity。
+    """
+    conn = _get_conn()
+    try:
+        total_sessions = conn.execute(
+            "SELECT COUNT(*) FROM sessions"
+        ).fetchone()[0]
+
+        total_messages = conn.execute(
+            "SELECT COUNT(*) FROM messages"
+        ).fetchone()[0]
+
+        avg_depth = (
+            round(total_messages / total_sessions, 1) if total_sessions > 0 else 0.0
+        )
+
+        today_active = conn.execute(
+            "SELECT COUNT(DISTINCT session_id) FROM messages "
+            "WHERE date(created_at) = date('now', 'localtime')"
+        ).fetchone()[0]
+
+        intent_rows = conn.execute(
+            "SELECT intent_label, COUNT(*) AS count "
+            "FROM messages WHERE intent_label IS NOT NULL "
+            "GROUP BY intent_label ORDER BY count DESC"
+        ).fetchall()
+        intent_distribution = [dict(r) for r in intent_rows]
+
+        sentiment_rows = conn.execute(
+            "SELECT sentiment_label, COUNT(*) AS count "
+            "FROM messages WHERE sentiment_label IS NOT NULL "
+            "GROUP BY sentiment_label ORDER BY count DESC"
+        ).fetchall()
+        sentiment_distribution = [dict(r) for r in sentiment_rows]
+
+        daily_rows = conn.execute(
+            "SELECT date(created_at) AS day, COUNT(*) AS count "
+            "FROM messages "
+            "WHERE created_at >= date('now', '-30 days', 'localtime') "
+            "GROUP BY day ORDER BY day ASC"
+        ).fetchall()
+        daily_trend = [dict(r) for r in daily_rows]
+
+        hourly_rows = conn.execute(
+            "SELECT CAST(strftime('%H', created_at) AS INTEGER) AS hour, "
+            "COUNT(*) AS count "
+            "FROM messages "
+            "GROUP BY hour ORDER BY hour ASC"
+        ).fetchall()
+        hourly_activity = [dict(r) for r in hourly_rows]
+
+        return {
+            "total_sessions": total_sessions,
+            "total_messages": total_messages,
+            "average_session_depth": avg_depth,
+            "today_active_sessions": today_active,
+            "intent_distribution": intent_distribution,
+            "sentiment_distribution": sentiment_distribution,
+            "daily_trend": daily_trend,
+            "hourly_activity": hourly_activity,
+        }
+    finally:
+        conn.close()
+
+
 def delete_session(session_id: str) -> bool:
     """删除会话及其所有消息。
 
